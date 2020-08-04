@@ -21,7 +21,7 @@
 
 // Principle:
 // QTimer3 (timer3) used to generate H-PUSE and line interrupt (and V-PULSE)
-// 2 FlexIO shift registers (0 and 1) and 2 DMA channels used to generate
+// 2 FlexIO shift registers (1 and 2) and 2 DMA channels used to generate
 // RGB out, combined to create 8bits(/12bits) output.
 
 // Note:
@@ -102,7 +102,8 @@ FASTRUN void VGA_T4::QT3_isr(void) {
     flexio1DMA.disable();
     flexio2DMA.disable();
     flexio1DMA.sourceBuffer((uint32_t *)&gfxbuffer[fb_stride*y], fb_stride); 
-    flexio1DMA.destination(FLEXIO1_SHIFTBUFBBS0);
+//    flexio1DMA.destination(FLEXIO1_SHIFTBUFBBS0);
+    flexio1DMA.destination(FLEXIO1_SHIFTBUFNBS0);
     flexio1DMA.disableOnCompletion();
     flexio2DMA.sourceBuffer((uint32_t *)&gfxbuffer[fb_stride*y], fb_stride); 
     flexio2DMA.destination(FLEXIO2_SHIFTBUF0);
