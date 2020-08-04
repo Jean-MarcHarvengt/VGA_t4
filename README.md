@@ -1,8 +1,7 @@
 # VGA_t4 library by J-M Harvengt
 
 ---
-##1. Description
----
+## 1. Description
 
 This library offers VGA output to the Teensy4/4.1 MCU familly.<br>
 It is inspired from the uVGA library for Teensy3.X by Eric Prevoteau and so, uses only few CPU resources.<br>
@@ -21,8 +20,7 @@ See code and examples for more details:
 
 
 ---
-##2. Wiring
----
+## 2. Wiring
 
 * Hsync pin (fixed: **15**) -> 82R resistor -> VGA 13
     *depend on QTIMER Timer3 output*
@@ -49,8 +47,8 @@ See code and examples for more details:
 for more accurate colors, replace 2k2 by 2k and 470R by 510R
 
 ---
-##3. Known issues
----
+## 3. Known issues
+
 - currently fixed resolution of 352x240 or 512x240 pixels
 - video memory is allocated using malloc in T4 heap
 - as the 2 DMA transfers are not started exactly at same time, there is a bit of color smearing
