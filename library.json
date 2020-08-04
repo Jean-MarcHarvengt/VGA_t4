@@ -1,0 +1,19 @@
+{
+  "name": "VGA_t4",
+  "frameworks": "Arduino",
+  "platforms": "Teensy",
+  "keywords": "VGA",
+  "description": "Display VGA for Teensy4",
+  "url": "",
+  "authors":
+  {
+    "name": "J-M Harvengt",
+    "maintainer": true
+  },
+  "repository":
+  {
+      "type": "git",
+      "url": "https://github.com/Jean-MarcHarvengt/VGA_t4"
+  },
+  "version": "1.0"
+}
