@@ -1,7 +1,7 @@
 # VGA_t4 (by J-M Harvengt)
 
 <p align="center">
-  <img height="140" src="/images/vga.jpg">
+  <img height="320" src="/images/vga.png">
 </p>
 
 ---
