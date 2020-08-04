@@ -30,12 +30,11 @@ See code and examples for more details:
 
 * the rest is very much dependent of the FlexIO 1 and 2 IO mapping:
 
-* Teensy __pin 2__ (FlexIO1:7 = 0x80) -> 470R resistor -> VGA pin 1 (red)
+* Teensy __pin 33__ (FlexIO1:7 = 0x80) -> 470R resistor -> VGA pin 1 (red)
+* Teensy __pin 4__ (FlexIO1:6 = 0x40) -> 1k resistor -> VGA pin 1 (red)
+* Teensy __pin 3__ (FlexIO1:5 = 0x20) -> 2k2 resistor -> VGA pin 1 (red)
 
-* Teensy __pin 3__ (FlexIO1:6 = 0x40) -> 1k resistor -> VGA pin 1 (red)
-* Teensy __pin 4__ (FlexIO1:5 = 0x20) -> 2k2 resistor -> VGA pin 1 (red)
-
-* Teensy __pin 33__  (FlexIO1:4 = 0x10) -> 470R resistor -> VGA pin 2 (green)
+* Teensy __pin 2__  (FlexIO1:4 = 0x10) -> 470R resistor -> VGA pin 2 (green)
 * Teensy __pin 13__  (FlexIO2:3 = 0x08) -> 1k resistor -> VGA pin 2 (green)
 * Teensy __pin 11__  (FlexIO2:2 = 0x04) -> 2k2 resistor -> VGA pin 2(green)
 
