@@ -1,4 +1,8 @@
-# VGA_t4 library by J-M Harvengt
+# VGA_t4 (by J-M Harvengt)
+
+<p align="center">
+  <img height="140" src="/images/vga.jpg">
+</p>
 
 ---
 ## 1. Description
