@@ -1,6 +1,6 @@
 # VGA_t4 library by J-M Harvengt
 
-1 Description
+1. Description
 ---
 
 This library offers VGA output to the Teensy4/4.1 MCU familly.<br>
@@ -19,7 +19,7 @@ See code and examples for more details:
 - Vgatest make use of the very limited GFX api offered.
 
 
-1 Wiring
+1. Wiring
 ---
 
 * Hsync pin (fixed: **15**) -> 82R resistor -> VGA 13
