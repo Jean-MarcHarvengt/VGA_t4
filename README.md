@@ -1,6 +1,7 @@
 # VGA_t4 library by J-M Harvengt
 
-1. Description
+---
+##1. Description
 ---
 
 This library offers VGA output to the Teensy4/4.1 MCU familly.<br>
@@ -19,7 +20,8 @@ See code and examples for more details:
 - Vgatest make use of the very limited GFX api offered.
 
 
-1. Wiring
+---
+##2. Wiring
 ---
 
 * Hsync pin (fixed: **15**) -> 82R resistor -> VGA 13
@@ -46,7 +48,8 @@ See code and examples for more details:
 
 for more accurate colors, replace 2k2 by 2k and 470R by 510R
 
-2 Known issues
+---
+##3. Known issues
 ---
 - currently fixed resolution of 352x240 or 512x240 pixels
 - video memory is allocated using malloc in T4 heap
