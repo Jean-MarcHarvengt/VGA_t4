@@ -3,8 +3,8 @@
 1 Description
 ---
 
-This library offers VGA output to the Teensy4/Teensy4.1 MCU familly.<br>
-It is inspired from the uVGA library for Teensy3.X of Eric Prevoteau and so uses only few CPU resources.<br>
+This library offers VGA output to the Teensy4/4.1 MCU familly.<br>
+It is inspired from the uVGA library for Teensy3.X by Eric Prevoteau and so, uses only few CPU resources.<br>
 It currently support 8bits RGB(RRRGGGBB) as uVGA does but in theory could be extended to 12bits (not tested!)<br>
 The implementation is quite different from the uVGA due to the different infrastructure of the T4 family:<br>
 
@@ -28,7 +28,7 @@ See code and examples for more details:
 * Vsync pin (default: **8**) -> 82R resistor -> VGA 14
     *can be changed to any pin*
 
-* the rest is very much dependent of the FlexIO 1 and 2 IO mapping.
+* the rest is very much dependent of the FlexIO 1 and 2 IO mapping:
 
 * Teensy __pin 2__ (FlexIO1:7 = 0x80) -> 470R resistor -> VGA pin 1 (red)
 
