@@ -27,7 +27,9 @@ void setup() {
 void loop() {
   vga.drawText((fb_width-320)/2,(fb_height-200)/2+6*8," ",BLUE,LIGHT_BLUE,false);
   delay(500);
+  vga.waitSync();
   vga.drawText((fb_width-320)/2,(fb_height-200)/2+6*8," ",BLUE,BLUE,false);
   delay(500);
+  vga.waitSync();
   //vga.debug();
 }

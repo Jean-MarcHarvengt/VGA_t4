@@ -25,12 +25,13 @@
 // RGB out, combined to create 8bits(/12bits) output.
 
 // Note:
-// - currently fixed resolution of 352x240 or 512x240 pixels
+// - supported resolutions of 352x240,352x480,512x240 and 512x480 pixels
 // - video memory is allocated using malloc in T4 heap
-// - as the 2 DMA transfers are not started exactly at same time, there is a bit of color smearing
-// - Some gitter (may be can be improved?) 
+// - as the 2 DMA transfers are not started exactly at same time, there is a bit of color smearing 
+//   but tried to be compensated by pixel shifting 
 // - Default is 8bits RRRGGGBB (332) 
 //   But 12bits GBB0RRRRGGGBB (444) feasible BUT NOT TESTED !!!!
+// - Only ok at 600MHz else some disturbances visible
 // - I did not tested on an HDMI display with VGA adapter
 
 #define TOP_BORDER    40
@@ -55,13 +56,15 @@
 #endif
 
 // Full buffer including back/front porch 
-static vga_pixel * gfxbuffer; // __attribute__((aligned(32)));
+static vga_pixel * gfxbuffer __attribute__((aligned(32)));
 // Visible vuffer
 static vga_pixel * framebuffer;
 static int fb_width;
 static int fb_height;
 static int fb_stride;
 static int left_border;
+static int line_double;
+static int pix_shift;
 
 
 #ifdef DEBUG
@@ -96,20 +99,73 @@ FASTRUN void VGA_T4::QT3_isr(void) {
   currentLine++;
   currentLine = currentLine % 525;
 
- uint32_t y = (currentLine - TOP_BORDER) >> 1; //double each line
+  uint32_t y = (currentLine - TOP_BORDER) >> line_double;
   // Visible area  
   if (y >= 0 && y < fb_height) {                          
+    /*
     flexio1DMA.disable();
     flexio2DMA.disable();
     flexio1DMA.sourceBuffer((uint32_t *)&gfxbuffer[fb_stride*y], fb_stride); 
-//    flexio1DMA.destination(FLEXIO1_SHIFTBUFBBS0);
     flexio1DMA.destination(FLEXIO1_SHIFTBUFNBS0);
     flexio1DMA.disableOnCompletion();
     flexio2DMA.sourceBuffer((uint32_t *)&gfxbuffer[fb_stride*y], fb_stride); 
     flexio2DMA.destination(FLEXIO2_SHIFTBUF0);
-    flexio2DMA.disableOnCompletion();   
-    flexio1DMA.enable();
+    flexio2DMA.disableOnCompletion();
     flexio2DMA.enable();
+    flexio1DMA.enable();
+    */
+
+    DMA_CERQ = flexio2DMA.channel; // Disable DMAs
+    DMA_CERQ = flexio1DMA.channel; 
+    
+    // Aligned 32 bits copy
+    unsigned long * p=(uint32_t *)&gfxbuffer[fb_stride*y];
+    flexio2DMA.TCD->NBYTES = 4;
+    flexio2DMA.TCD->SADDR = p;
+    flexio2DMA.TCD->SOFF = 4;
+    flexio2DMA.TCD->SLAST = -fb_stride;
+    flexio2DMA.TCD->BITER = fb_stride / 4;
+    flexio2DMA.TCD->CITER = fb_stride / 4;
+    flexio2DMA.TCD->DADDR = &FLEXIO2_SHIFTBUF0;
+    flexio2DMA.TCD->DOFF = 0;
+    flexio2DMA.TCD->DLASTSGA = 0;
+    flexio2DMA.TCD->ATTR = DMA_TCD_ATTR_SSIZE(2) | DMA_TCD_ATTR_DSIZE(2); // 32bits
+    flexio2DMA.TCD->CSR |= DMA_TCD_CSR_DREQ;
+    if (pix_shift) 
+    {
+      // Unaligned (source) 32 bits copy
+      uint8_t * p2=(uint8_t *)&gfxbuffer[fb_stride*y+pix_shift];
+      flexio1DMA.TCD->CITER = fb_stride / 4;
+      flexio1DMA.TCD->BITER = fb_stride / 4;
+      flexio1DMA.TCD->SADDR = p2;
+      flexio1DMA.TCD->NBYTES = 4;
+      flexio1DMA.TCD->SOFF = 1;
+      flexio1DMA.TCD->SLAST = -fb_stride;
+      flexio1DMA.TCD->DADDR = &FLEXIO1_SHIFTBUFNBS0;
+      flexio1DMA.TCD->DOFF = 0;
+      flexio1DMA.TCD->DLASTSGA = 0;
+      flexio1DMA.TCD->ATTR = DMA_TCD_ATTR_SSIZE(0) | DMA_TCD_ATTR_DSIZE(2); // 8bits to 32bits
+      flexio1DMA.TCD->CSR |= DMA_TCD_CSR_DREQ; // disable on completion
+    }
+    else 
+    {
+      // Aligned 32 bits copy
+      p=(uint32_t *)&gfxbuffer[fb_stride*y];
+      flexio1DMA.TCD->NBYTES = 4;
+      flexio1DMA.TCD->SADDR = p;
+      flexio1DMA.TCD->SOFF = 4;
+      flexio1DMA.TCD->SLAST = -fb_stride;
+      flexio1DMA.TCD->BITER = fb_stride / 4;
+      flexio1DMA.TCD->CITER = fb_stride / 4;
+      flexio1DMA.TCD->DADDR = &FLEXIO1_SHIFTBUFNBS0;
+      flexio1DMA.TCD->DOFF = 0;
+      flexio1DMA.TCD->DLASTSGA = 0;
+      flexio1DMA.TCD->ATTR = DMA_TCD_ATTR_SSIZE(2) | DMA_TCD_ATTR_DSIZE(2); // 32bits
+      flexio1DMA.TCD->CSR |= DMA_TCD_CSR_DREQ;
+    }      
+    DMA_SERQ = flexio2DMA.channel; 
+    DMA_SERQ = flexio1DMA.channel; // Enable DMAs
+
     arm_dcache_flush((void*)((uint32_t *)&gfxbuffer[fb_stride*y]), fb_stride);
   }
   sei();  
@@ -140,6 +196,17 @@ vga_error_t VGA_T4::begin(vga_mode_t mode)
       fb_height = 240 ;
       fb_stride = fb_width+left_border;
       flexio_clock_div = 35;
+      line_double = 1;
+      pix_shift = 2;
+      break;
+    case VGA_MODE_352x480:
+      left_border = 60;
+      fb_width = 352;
+      fb_height = 480 ;
+      fb_stride = fb_width+left_border;
+      flexio_clock_div = 35;
+      line_double = 0;
+      pix_shift = 2;
       break;
     case VGA_MODE_512x240:
       left_border = 80;
@@ -147,6 +214,17 @@ vga_error_t VGA_T4::begin(vga_mode_t mode)
       fb_height = 240 ;
       fb_stride = fb_width+left_border;
       flexio_clock_div = 24;
+      line_double = 1;
+      pix_shift = 0;
+      break;
+    case VGA_MODE_512x480:
+      left_border = 80;
+      fb_width = 512;
+      fb_height = 480 ;
+      fb_stride = fb_width+left_border;
+      flexio_clock_div = 24;
+      line_double = 0;
+      pix_shift = 0;
       break;
   }	
 
@@ -233,7 +311,7 @@ vga_error_t VGA_T4::begin(vga_mode_t mode)
   parallelWidth = FLEXIO_SHIFTCFG_PWIDTH(16); // 16-bit parallel shift width
   pinSelect = FLEXIO_SHIFTCTL_PINSEL(0);      // Select pins FXIO_D0 through FXIO_D12
 #else
-  parallelWidth = FLEXIO_SHIFTCFG_PWIDTH(4);  // 4-bit parallel shift width
+  parallelWidth = FLEXIO_SHIFTCFG_PWIDTH(4);  // 8-bit parallel shift width
   pinSelect = FLEXIO_SHIFTCTL_PINSEL(0);      // Select pins FXIO_D0 through FXIO_D3
 #endif
   inputSource = FLEXIO_SHIFTCFG_INSRC*(1);    // Input source from Shifter 1
@@ -251,7 +329,7 @@ vga_error_t VGA_T4::begin(vga_mode_t mode)
   parallelWidth = FLEXIO_SHIFTCFG_PWIDTH(5);  // 5-bit parallel shift width
   pinSelect = FLEXIO_SHIFTCTL_PINSEL(4);      // Select pins FXIO_D4 through FXIO_D8
 #else
-  parallelWidth = FLEXIO_SHIFTCFG_PWIDTH(4);  // 4-bit parallel shift width
+  parallelWidth = FLEXIO_SHIFTCFG_PWIDTH(4);  // 8-bit parallel shift width
   pinSelect = FLEXIO_SHIFTCTL_PINSEL(4);      // Select pins FXIO_D4 through FXIO_D7
 #endif  
   FLEXIO1_SHIFTCFG0 = parallelWidth | inputSource | stopBit | startBit;
@@ -334,10 +412,10 @@ vga_error_t VGA_T4::begin(vga_mode_t mode)
 #endif
 
   /* initialize gfx buffer */
-  gfxbuffer = (vga_pixel*)malloc(fb_stride*fb_height*sizeof(vga_pixel));
+  gfxbuffer = (vga_pixel*)malloc(fb_stride*fb_height*sizeof(vga_pixel)+4); // 4bytes for pixel shift 
   if (gfxbuffer == NULL) return(VGA_ERROR);
 
-  memset((void*)&gfxbuffer[0],0, fb_stride*fb_height*sizeof(vga_pixel));
+  memset((void*)&gfxbuffer[0],0, fb_stride*fb_height*sizeof(vga_pixel)+4);
   framebuffer = (vga_pixel*)&gfxbuffer[left_border];
 
   return(VGA_OK);
@@ -383,7 +461,6 @@ void VGA_T4::waitSync()
 }
 
 
-
 void VGA_T4::clear(vga_pixel color) {
   int i,j;
   for (j=0; j<fb_height; j++)
@@ -411,7 +488,6 @@ vga_pixel * VGA_T4::getLineBuffer(int j) {
 
 void VGA_T4::drawRect(int16_t x, int16_t y, int16_t w, int16_t h, vga_pixel color) {
   int i,j,l=y;
-  color=color;
   for (j=0; j<h; j++)
   {
     vga_pixel * dst=&framebuffer[l*fb_stride+x];
@@ -426,8 +502,6 @@ void VGA_T4::drawRect(int16_t x, int16_t y, int16_t w, int16_t h, vga_pixel colo
 void VGA_T4::drawText(int16_t x, int16_t y, const char * text, vga_pixel fgcolor, vga_pixel bgcolor, bool doublesize) {
   vga_pixel c;
   vga_pixel * dst;
-  fgcolor = fgcolor;
-  bgcolor = bgcolor;
   
   while ((c = *text++)) {
     const unsigned char * charpt=&font8x8[c][0];
@@ -558,3 +632,109 @@ void VGA_T4::drawSprite(int16_t x, int16_t y, const vga_pixel *bitmap, uint16_t 
   } 
 }
 
+void VGA_T4::writeLine(int width, int height, int y, uint8_t *buf, vga_pixel *palette16) {
+  vga_pixel * dst=&framebuffer[y*fb_stride];
+  if (width > fb_width) {
+#ifdef TFT_LINEARINT    
+    int delta = (width/(width-fb_width))-1;
+    int pos = delta;
+    for (int i=0; i<fb_width; i++)
+    {
+      uint16_t val = palette16[*buf++];
+      pos--;      
+      if (pos == 0) {
+#ifdef LINEARINT_HACK        
+        val  = ((uint32_t)palette16[*buf++] + val)/2;
+#else
+        uint16_t val2 = *buf++;
+        val = RGBVAL16((R16(val)+R16(val2))/2,(G16(val)+G16(val2))/2,(B16(val)+B16(val2))/2);
+#endif        
+        pos = delta;
+      }
+      *dst++=val;
+    }
+#else
+    int step = ((width << 8)/fb_width);
+    int pos = 0;
+    for (int i=0; i<fb_width; i++)
+    {
+      *dst++=palette16[buf[pos >> 8]];
+      pos +=step;
+    }  
+#endif       
+  }
+  else if ((width*2) == fb_width) {
+    for (int i=0; i<width; i++)
+    {
+      *dst++=palette16[*buf];
+      *dst++=palette16[*buf++];
+    }       
+  }
+  else {
+    if (width <= fb_width) {
+      dst += (fb_width-width)/2;
+    }
+    for (int i=0; i<width; i++)
+    {
+      *dst++=palette16[*buf++];
+    }       
+  }
+}
+
+void VGA_T4::writeScreen(int width, int height, int stride, uint8_t *buf, vga_pixel *palette16) {
+  uint8_t *buffer=buf;
+  uint8_t *src; 
+
+  int i,j,y=0;
+  if (width*2 <= fb_width) {
+    for (j=0; j<height; j++)
+    {
+      vga_pixel * dst=&framebuffer[y*fb_stride];        
+      src=buffer;
+      for (i=0; i<width; i++)
+      {
+        vga_pixel val = palette16[*src++];
+        *dst++ = val;
+        *dst++ = val;
+      }
+      y++;
+      if (height*2 <= fb_height) {
+        dst=&framebuffer[y*fb_stride];           
+        src=buffer;
+        for (i=0; i<width; i++)
+        {
+          vga_pixel val = palette16[*src++];
+          *dst++ = val;
+          *dst++ = val;
+        }
+        y++;      
+      } 
+      buffer += stride;      
+    }
+  }
+  else if (width <= fb_width) {
+    //dst += (fb_width-width)/2;
+    for (j=0; j<height; j++)
+    {
+      vga_pixel * dst=&framebuffer[y*fb_stride+(fb_width-width)/2];          
+      src=buffer;
+      for (i=0; i<width; i++)
+      {
+        vga_pixel val = palette16[*src++];
+        *dst++ = val;
+      }
+      y++;
+      if (height*2 <= fb_height) {
+        dst=&framebuffer[y*fb_stride+(fb_width-width)/2];          
+        src=buffer;
+        for (i=0; i<width; i++)
+        {
+          vga_pixel val = palette16[*src++];
+          *dst++ = val;
+        }
+        y++;
+      }      
+      buffer += stride;  
+    }
+  }   
+}

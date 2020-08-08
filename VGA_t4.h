@@ -42,7 +42,9 @@ typedef uint8_t vga_pixel;
 typedef enum vga_mode_t
 {
 	VGA_MODE_352x240 = 0,
-	VGA_MODE_512x240 = 1
+  VGA_MODE_352x480 = 1,
+	VGA_MODE_512x240 = 2,
+  VGA_MODE_512x480 = 3
 } vga_mode_t;
 
 
@@ -87,6 +89,8 @@ public:
   void drawSprite(int16_t x, int16_t y, const vga_pixel *bitmap);
   void drawSprite(int16_t x, int16_t y, const vga_pixel *bitmap, uint16_t croparx, uint16_t cropary, uint16_t croparw, uint16_t croparh);
   void writeScreen(const vga_pixel *pcolors);
+  void writeLine(int width, int height, int stride, uint8_t *buffer, vga_pixel *palette16);
+  void writeScreen(int width, int height, int stride, uint8_t *buffer, vga_pixel *palette16);
 
 private:
   static uint8_t _vsync_pin;
