@@ -16,11 +16,13 @@ The implementation is quite different due to the different infrastructure of the
 - 2 FlexIO registers (1 and 2) and 2 DMA channels are used to generate RGB out, combining 2x4pins to create 8bits output.
 - the DMA transfers are initiated from the line interrupt to generate pixels so the front/back porch pixels are also part of each line buffer.
 
-It currently supports 352x240 and 512x240 resolutions<br>
+It currently supports 352x240, 352x480, 512x240 and 512x480 resolutions<br>
+Please compile the sketches at 600MHz else some interferences will be visible.<br>
 
 See code and examples for more details:
 - Mandlebrot example was taken from the uVGA library to illustrate close compatibility.
 - Vgatest make use of the very limited GFX api offered.
+- Vgatestalign highlights colors smearing issue.
 
 
 ---
@@ -52,9 +54,7 @@ for more accurate colors, replace 2k2 by 2k and 470R by 510R
 ---
 ## 3. Known issues
 
-- currently fixed resolution of 352x240 or 512x240 pixels
 - video memory is allocated using malloc in T4 heap
-- as the 2 DMA transfers are not started exactly at same time, there is a bit of color smearing
-- Some gitter (may be can be improved?) 
+- as the 2 DMA transfers are not started exactly at same time, color smearing between high and low color nibbles is compensated by pixel shifting (at low 352xYYY only)
 - Default is 8bits RRRGGGBB (332) but 12bits GBB0RRRRGGGBB (444) feasible BUT NOT TESTED !!!!
 - I did not tested on an HDMI display with a VGA adapter
