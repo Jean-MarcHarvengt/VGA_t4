@@ -681,6 +681,36 @@ void VGA_T4::writeLine(int width, int height, int y, uint8_t *buf, vga_pixel *pa
   }
 }
 
+void VGA_T4::writeLine(int width, int height, int y, vga_pixel *buf) {
+  uint8_t * dst=&framebuffer[y*fb_stride];    
+  if (width > fb_width) {
+
+    int step = ((width << 8)/fb_width);
+    int pos = 0;
+    for (int i=0; i<fb_width; i++)
+    {
+      *dst++=buf[pos >> 8];
+      pos +=step;
+    }        
+  }
+  else if ((width*2) == fb_width) {
+    for (int i=0; i<width; i++)
+    {
+      *dst++=*buf;
+      *dst++=*buf++;
+    }       
+  }
+  else {
+    if (width <= fb_width) {
+      dst += (fb_width-width)/2;
+    }
+    for (int i=0; i<width; i++)
+    {
+      *dst++=*buf++;
+    }       
+  }
+}
+
 void VGA_T4::writeScreen(int width, int height, int stride, uint8_t *buf, vga_pixel *palette16) {
   uint8_t *buffer=buf;
   uint8_t *src; 

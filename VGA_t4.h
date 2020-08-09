@@ -88,7 +88,8 @@ public:
   void drawText(int16_t x, int16_t y, const char * text, vga_pixel fgcolor, vga_pixel bgcolor, bool doublesize);
   void drawSprite(int16_t x, int16_t y, const vga_pixel *bitmap);
   void drawSprite(int16_t x, int16_t y, const vga_pixel *bitmap, uint16_t croparx, uint16_t cropary, uint16_t croparw, uint16_t croparh);
-  void writeScreen(const vga_pixel *pcolors);
+  void writeScreen(const vga_pixel *pcolors);  
+  void writeLine(int width, int height, int y, vga_pixel *buf);
   void writeLine(int width, int height, int stride, uint8_t *buffer, vga_pixel *palette16);
   void writeScreen(int width, int height, int stride, uint8_t *buffer, vga_pixel *palette16);
 
