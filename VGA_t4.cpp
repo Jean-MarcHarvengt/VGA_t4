@@ -204,7 +204,7 @@ VGA_T4::VGA_T4(int vsync_pin = DEFAULT_VSYNC_PIN)
 // pix_period = 39.7ns
 // H-PULSE is 3.8133us = 3813.3ns => 96 pixels
 #define syncpulse_pix   96 
-#define backporch_pix   48 
+#define backporch_pix   32 //48 
 
 // Flexio Clock
 // PLL3 SW CLOCK    (3) => 480 MHz
