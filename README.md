@@ -4,6 +4,8 @@
   <img height="320" src="/images/vga.png">
 </p>
 
+https://www.youtube.com/watch?v=UE9MPr-iVOg
+
 ---
 ## 1. Description
 
@@ -51,10 +53,14 @@ See code and examples for more details:
 
 for more accurate colors, replace 2k2 by 2k and 470R by 510R
 
----
-## 3. Known issues
+Alternatively, you can also use a proper R2R ladder proposed by darthvader.
 
-- video memory is allocated using malloc in T4 heap
+---
+## 3. Known issues - Remarks
+
+- use at 600MHz only
 - as the 2 DMA transfers are not started exactly at same time, color smearing between high and low color nibbles is compensated by pixel shifting (at low 352xYYY only)
 - Default is 8bits RRRGGGBB (332) but 12bits GBB0RRRRGGGBB (444) feasible BUT NOT TESTED !!!!
-- I did not tested on an HDMI display with a VGA adapter
+- video memory is allocated using malloc in T4 heap
+- VGA2HDMI adapters confirmed to work properly!
+- I2S/SPDIF simultaneous sound output causes some distorsions
