@@ -34,8 +34,7 @@
 // - Only ok at 600MHz else some disturbances visible
 // - I did not tested on an HDMI display with VGA adapter
 
-#define TOP_BORDER    40
-
+#define TOP_BORDER    45
 #define PIN_HBLANK    15
 
 #ifdef BITS12
@@ -54,6 +53,11 @@
 #define PIN_B_B3      9
 #define PIN_G_B3      32
 #endif
+
+#define DMA_HACK      0x80
+
+#define ABS(X)  ((X) > 0 ? (X) : -(X))
+
 
 // Full buffer including back/front porch 
 static vga_pixel * gfxbuffer __attribute__((aligned(32)));
@@ -131,10 +135,10 @@ FASTRUN void VGA_T4::QT3_isr(void) {
     flexio2DMA.TCD->DLASTSGA = 0;
     flexio2DMA.TCD->ATTR = DMA_TCD_ATTR_SSIZE(2) | DMA_TCD_ATTR_DSIZE(2); // 32bits
     flexio2DMA.TCD->CSR |= DMA_TCD_CSR_DREQ;
-    if (pix_shift) 
+    if (pix_shift&DMA_HACK) 
     {
       // Unaligned (source) 32 bits copy
-      uint8_t * p2=(uint8_t *)&gfxbuffer[fb_stride*y+pix_shift];
+      uint8_t * p2=(uint8_t *)&gfxbuffer[fb_stride*y+(pix_shift&0xf)];
       flexio1DMA.TCD->CITER = fb_stride / 4;
       flexio1DMA.TCD->BITER = fb_stride / 4;
       flexio1DMA.TCD->SADDR = p2;
@@ -182,6 +186,34 @@ VGA_T4::VGA_T4(int vsync_pin = DEFAULT_VSYNC_PIN)
   _vsync_pin = vsync_pin;
 }
 
+// VGA 640x480@60Hz
+// Screen refresh rate 60 Hz
+// Vertical refresh    31.46875 kHz
+// Pixel freq.         25.175 MHz
+//
+// Visible area        640  25.422045680238 us
+// Front porch         16   0.63555114200596 us
+// Sync pulse          96   3.8133068520357 us
+// Back porch          48   1.9066534260179 us
+// Whole line          800  31.777557100298 us
+
+#define frame_freq     60.0     // Hz
+#define line_freq      31468.75 // Hz
+#define pix_freq       (line_freq*800) // Hz
+
+// pix_period = 39.7ns
+// H-PULSE is 3.8133us = 3813.3ns => 96 pixels
+#define syncpulse_pix   96 
+#define backporch_pix   48 
+
+// Flexio Clock
+// PLL3 SW CLOCK    (3) => 480 MHz
+// PLL5 VIDEO CLOCK (2) => 649.52 MHz
+#define flexio_freq     480000000
+#define flexio_clk_sel  3
+//#define flexio_freq     649520000
+//#define flexio_clk_sel  2
+
 
 
 // display VGA image
@@ -190,14 +222,32 @@ vga_error_t VGA_T4::begin(vga_mode_t mode)
   uint32_t flexio_clock_div;
 
   switch(mode) {
+    case VGA_MODE_320x240:
+      left_border = (syncpulse_pix+backporch_pix)/2;
+      fb_width = 320;
+      fb_height = 240 ;
+      fb_stride = fb_width+left_border;
+      flexio_clock_div = flexio_freq/(pix_freq/2);
+      line_double = 1;
+      pix_shift = 2+DMA_HACK;
+      break;
+    case VGA_MODE_320x480:
+      left_border = (syncpulse_pix+backporch_pix)/2;
+      fb_width = 320;
+      fb_height = 480 ;
+      fb_stride = fb_width+left_border;
+      flexio_clock_div = flexio_freq/(pix_freq/2);
+      line_double = 0;
+      pix_shift = 2+DMA_HACK;
+      break;
     case VGA_MODE_352x240:
-      left_border = 60;
+      left_border = 68;
       fb_width = 352;
       fb_height = 240 ;
       fb_stride = fb_width+left_border;
       flexio_clock_div = 35;
       line_double = 1;
-      pix_shift = 2;
+      pix_shift = 2+DMA_HACK;
       break;
     case VGA_MODE_352x480:
       left_border = 60;
@@ -206,7 +256,7 @@ vga_error_t VGA_T4::begin(vga_mode_t mode)
       fb_stride = fb_width+left_border;
       flexio_clock_div = 35;
       line_double = 0;
-      pix_shift = 2;
+      pix_shift = 2+DMA_HACK;
       break;
     case VGA_MODE_512x240:
       left_border = 80;
@@ -223,6 +273,24 @@ vga_error_t VGA_T4::begin(vga_mode_t mode)
       fb_height = 480 ;
       fb_stride = fb_width+left_border;
       flexio_clock_div = 24;
+      line_double = 0;
+      pix_shift = 0;
+      break;
+    case VGA_MODE_640x240:
+      left_border = syncpulse_pix+backporch_pix;
+      fb_width = 640;
+      fb_height = 240 ;
+      fb_stride = fb_width+left_border;
+      flexio_clock_div = flexio_freq/pix_freq;
+      line_double = 1;
+      pix_shift = 0;//1+DMA_HACK;
+      break;
+    case VGA_MODE_640x480:
+      left_border = syncpulse_pix+backporch_pix;
+      fb_width = 640;
+      fb_height = 480 ;
+      fb_stride = fb_width+left_border;
+      flexio_clock_div = flexio_freq/pix_freq;
       line_double = 0;
       pix_shift = 0;
       break;
@@ -268,12 +336,12 @@ vga_error_t VGA_T4::begin(vga_mode_t mode)
   *(portControlRegister(PIN_G_B3)) = 0xFF;
 #endif
 
-  /* Set clock to 480 MHz for FlexIO1 and FlexIO2 */
+  /* Set clock for FlexIO1 and FlexIO2 */
   CCM_CCGR5 &= ~CCM_CCGR5_FLEXIO1(CCM_CCGR_ON);
   CCM_CDCDR = (CCM_CDCDR & ~(CCM_CDCDR_FLEXIO1_CLK_SEL(3) | CCM_CDCDR_FLEXIO1_CLK_PRED(7) | CCM_CDCDR_FLEXIO1_CLK_PODF(7))) 
-    | CCM_CDCDR_FLEXIO1_CLK_SEL(3) | CCM_CDCDR_FLEXIO1_CLK_PRED(0) | CCM_CDCDR_FLEXIO1_CLK_PODF(0);
+    | CCM_CDCDR_FLEXIO1_CLK_SEL(flexio_clk_sel) | CCM_CDCDR_FLEXIO1_CLK_PRED(0) | CCM_CDCDR_FLEXIO1_CLK_PODF(0);
   CCM_CCGR3 &= ~CCM_CCGR3_FLEXIO2(CCM_CCGR_ON);
-  CCM_CSCMR2 = (CCM_CSCMR2 & ~(CCM_CSCMR2_FLEXIO2_CLK_SEL(3))) | CCM_CSCMR2_FLEXIO2_CLK_SEL(3);
+  CCM_CSCMR2 = (CCM_CSCMR2 & ~(CCM_CSCMR2_FLEXIO2_CLK_SEL(3))) | CCM_CSCMR2_FLEXIO2_CLK_SEL(flexio_clk_sel);
   CCM_CS1CDR = (CCM_CS1CDR & ~(CCM_CS1CDR_FLEXIO2_CLK_PRED(7)|CCM_CS1CDR_FLEXIO2_CLK_PODF(7)) )
     | CCM_CS1CDR_FLEXIO2_CLK_PRED(0) | CCM_CS1CDR_FLEXIO2_CLK_PODF(0);
 
@@ -350,7 +418,7 @@ vga_error_t VGA_T4::begin(vga_mode_t mode)
   pinSelect = FLEXIO_TIMCTL_PINSEL(0);        // Select pin FXIO_D0
   pinPolarity = FLEXIO_TIMCTL_PINPOL*(0);     // Timer pin polarity active high
   timerMode = FLEXIO_TIMCTL_TIMOD(1);         // Dual 8-bit counters baud mode
-  // flexio_clock_div : Output clock frequency is N times slower than FlexIO clock (41.7 ns period);
+  // flexio_clock_div : Output clock frequency is N times slower than FlexIO clock (41.7 ns period) (23.980MHz?)
 #ifdef BITS12
   #define SHIFTS_PER_TRANSFER 8 // Shift out 8 times with every transfer = two 32-bit words = contents of Shifter 0 (16bits)
 #else
@@ -390,14 +458,18 @@ vga_error_t VGA_T4::begin(vga_mode_t mode)
   // (4179x6.7ns for 28us) 
   CCM_CCGR6 |= 0xC0000000;              //enable clocks to CG15 of CGR6 for QT3
   //configure QTIMER3 Timer3 for test of alternating Compare1 and Compare2
+  
+  #define MARGIN_N 1005
+  #define MARGIN_D 1000
+
   TMR3_CTRL3 = 0b0000000000100000;      //stop all functions of timer 
   TMR3_SCTRL3 = 0b0000000000000001;     //0(TimerCompareFlag),0(TimerCompareIntEnable),00(TimerOverflow)0000(NoCapture),0000(Capture Disabled),00, 0,1(OFLAG to Ext Pin)
   TMR3_CNTR3 = 0;
   TMR3_LOAD3 = 0;
-  TMR3_COMP13 = 569-1;
-  TMR3_CMPLD13 = 569-1;
-  TMR3_COMP23 = 4174-1;
-  TMR3_CMPLD23 = 4174-1;
+  TMR3_COMP13 = ((569*MARGIN_N)/MARGIN_D)-1;
+  TMR3_CMPLD13 = ((569*MARGIN_N)/MARGIN_D)-1;
+  TMR3_COMP23 = ((4174*MARGIN_N)/MARGIN_D)-1;
+  TMR3_CMPLD23 = ((4174*MARGIN_N)/MARGIN_D)-1;
   TMR3_CSCTRL3 = 0b0000000010000101;    //Compare1 only enabled - Compare Load1 control and Compare Load2 control both on
   TMR3_CTRL3 = 0b0011000000100100;      // 001(Count rising edges Primary Source),1000(IP Bus Clock),00 (Secondary Source), 
                                         // 0(Count Once),1(Count up to Compare),0(Count Up),0(Co Channel Init),100(Toggle OFLAG on alternating Compare1/Compare2)
@@ -687,10 +759,41 @@ void VGA_T4::writeLine(int width, int height, int y, vga_pixel *buf) {
 
     int step = ((width << 8)/fb_width);
     int pos = 0;
+    vga_pixel plo=0;
+    uint16_t pr,pg,pb;
+    int ppos=0;
     for (int i=0; i<fb_width; i++)
     {
-      *dst++=buf[pos >> 8];
+      uint16_t r,g,b;
+      vga_pixel lo,hi;
+      b = buf[ppos];
+      r = b & 0xe0;
+      g = b & 0x1c;
+      b = b & 0x03;
       pos +=step;
+      if ( ((pos >> 8)-ppos) == 1 ) {
+        lo = (r+pr)/2 | (g+pg)/2 | (b+pb)/2;
+      }
+      else {
+        lo = r | g | b;
+      }
+      hi = lo & 0xf0;
+      lo &= 0xf;
+      *dst++ = plo| hi;
+      plo=lo;
+      pr = r;
+      pg = g;
+      pb = b;
+      ppos = pos >> 8;
+      /*
+      vga_pixel lo,hi;
+      lo = buf[pos >> 8];
+      hi = lo & 0xf0;
+      lo &= 0xf;
+      *dst++ = plo| hi;
+      plo=lo;
+      pos +=step;
+       */
     }        
   }
   else if ((width*2) == fb_width) {
@@ -704,10 +807,26 @@ void VGA_T4::writeLine(int width, int height, int y, vga_pixel *buf) {
     if (width <= fb_width) {
       dst += (fb_width-width)/2;
     }
-    for (int i=0; i<width; i++)
-    {
-      *dst++=*buf++;
-    }       
+    if (pix_shift&DMA_HACK) {
+      for (int i=0; i<width; i++)
+      {
+        *dst++=*buf++;
+      }      
+    }
+    else {
+      vga_pixel plo=0,pplo=0;
+      for (int i=0; i<width; i++)
+      {
+        //*dst++=*buf++;
+        vga_pixel lo,hi;
+        lo = *buf++;
+        hi = lo & 0xf0;
+        lo &= 0xf;
+        *dst++ = plo| hi;
+        //pplo=plo;
+        plo=lo;
+      }
+    }
   }
 }
 
@@ -768,3 +887,437 @@ void VGA_T4::writeScreen(int width, int height, int stride, uint8_t *buf, vga_pi
     }
   }   
 }
+
+
+
+//--------------------------------------------------------------
+// Draw a line between 2 points
+// x1,y1   : 1st point
+// x2,y2   : 2nd point
+// Color   : 16bits color
+//--------------------------------------------------------------
+void VGA_T4::drawline(int16_t x1, int16_t y1, int16_t x2, int16_t y2, vga_pixel color){
+  uint8_t yLonger = 0;
+  int incrementVal, endVal;
+  int shortLen = y2-y1;
+  int longLen = x2-x1;
+  int decInc;
+  int j = 0, i = 0;
+
+  if(ABS(shortLen) > ABS(longLen)) {
+    int swap = shortLen;
+    shortLen = longLen;
+    longLen = swap;
+    yLonger = 1;
+  }
+
+  endVal = longLen;
+
+  if(longLen < 0) {
+    incrementVal = -1;
+    longLen = -longLen;
+    endVal--;
+  } else {
+    incrementVal = 1;
+    endVal++;
+  }
+
+  if(longLen == 0)
+    decInc = 0;
+  else
+    decInc = (shortLen << 16) / longLen;
+
+  if(yLonger) {
+    for(i = 0;i != endVal;i += incrementVal) {
+      drawPixel(x1 + (j >> 16),y1 + i,color);
+      j += decInc;
+    }
+  } else {
+    for(i = 0;i != endVal;i += incrementVal) {
+      drawPixel(x1 + i,y1 + (j >> 16),color);
+      j += decInc;
+    }
+  }
+}
+  
+//--------------------------------------------------------------
+// Draw a circle.
+// x, y - center of circle.
+// r - radius.
+// color - color of the circle.
+//--------------------------------------------------------------
+void VGA_T4::drawcircle(int16_t x, int16_t y, uint16_t radius, vga_pixel color){
+  int16_t a, b, P;
+
+  a = 0;
+  b = radius;
+  P = 1 - radius;
+
+  do {
+    if(((a+x) >= 0) && ((b+x) >= 0))
+      drawPixel(a+x, b+y, color);
+    if(((b+x) >= 0) && ((a+y) >= 0))
+      drawPixel(b+x, a+y, color);
+    if(((x-a) >= 0) && ((b+y) >= 0))
+      drawPixel(x-a, b+y, color);
+    if(((x-b) >= 0) && ((a+y) >= 0))
+      drawPixel(x-b, a+y, color);
+    if(((b+x) >= 0) && ((y-a) >= 0))
+      drawPixel(b+x, y-a, color);
+    if(((a+x) >= 0) && ((y-b) >= 0))
+      drawPixel(a+x, y-b, color);
+    if(((x-a) >= 0) && ((y-b) >= 0))
+      drawPixel(x-a, y-b, color);
+    if(((x-b) >= 0) && ((y-a) >= 0))
+      drawPixel(x-b, y-a, color);
+
+    if(P < 0)
+      P+= 3 + 2*a++;
+    else
+      P+= 5 + 2*(a++ - b--);
+  } while(a <= b);    
+}
+  
+//--------------------------------------------------------------
+// Displays a full circle.
+// x          : specifies the X position
+// y          : specifies the Y position
+// radius     : specifies the Circle Radius
+// fillcolor  : specifies the Circle Fill Color
+// bordercolor: specifies the Circle Border Color
+//--------------------------------------------------------------
+void VGA_T4::drawfilledcircle(int16_t x, int16_t y, int16_t radius, vga_pixel fillcolor, vga_pixel bordercolor){
+  int32_t  D;    /* Decision Variable */
+  uint32_t  CurX;/* Current X Value */
+  uint32_t  CurY;/* Current Y Value */
+
+  D = 3 - (radius << 1);
+
+  CurX = 0;
+  CurY = radius;
+
+  while (CurX <= CurY)
+  {
+    if(CurY > 0)
+    {
+      drawline(x - CurX, y - CurY , x - CurX, 2*CurY + y - CurY,fillcolor);
+      drawline(x + CurX, y - CurY , x + CurX, 2*CurY + y - CurY,fillcolor);
+    }
+
+    if(CurX > 0)
+    {
+      drawline(x - CurY, y - CurX , x - CurY, 2*CurX + y - CurX,fillcolor);
+      drawline(x + CurY, y - CurX , x + CurY, 2*CurX + y - CurX,fillcolor);
+    }
+    if (D < 0)
+    {
+      D += (CurX << 2) + 6;
+    }
+    else
+    {
+      D += ((CurX - CurY) << 2) + 10;
+      CurY--;
+    }
+    CurX++;
+  }
+
+  drawcircle(x, y, radius,bordercolor);
+}
+  
+//--------------------------------------------------------------
+// Displays an Ellipse.
+// cx: specifies the X position
+// cy: specifies the Y position
+// radius1: minor radius of ellipse.
+// radius2: major radius of ellipse.
+// color: specifies the Color to use for draw the Border from the Ellipse.
+//--------------------------------------------------------------
+void VGA_T4::drawellipse(int16_t cx, int16_t cy, uint16_t radius1, uint16_t radius2, vga_pixel color){
+  int x = -radius1, y = 0, err = 2-2*radius1, e2;
+  float K = 0, rad1 = 0, rad2 = 0;
+
+  rad1 = radius1;
+  rad2 = radius1;
+
+  if (radius1 > radius2)
+  {
+    do {
+      K = (float)(rad1/rad2);
+      drawPixel(cx-x,cy+(uint16_t)(y/K),color);
+      drawPixel(cx+x,cy+(uint16_t)(y/K),color);
+      drawPixel(cx+x,cy-(uint16_t)(y/K),color);
+      drawPixel(cx-x,cy-(uint16_t)(y/K),color);
+
+      e2 = err;
+      if (e2 <= y) {
+        err += ++y*2+1;
+        if (-x == y && e2 <= x) e2 = 0;
+      }
+      if (e2 > x) err += ++x*2+1;
+    }
+    while (x <= 0);
+  }
+  else
+  {
+    y = -radius2;
+    x = 0;
+    do {
+      K = (float)(rad2/rad1);
+      drawPixel(cx-(uint16_t)(x/K),cy+y,color);
+      drawPixel(cx+(uint16_t)(x/K),cy+y,color);
+      drawPixel(cx+(uint16_t)(x/K),cy-y,color);
+      drawPixel(cx-(uint16_t)(x/K),cy-y,color);
+
+      e2 = err;
+      if (e2 <= x) {
+        err += ++x*2+1;
+        if (-y == x && e2 <= y) e2 = 0;
+      }
+      if (e2 > y) err += ++y*2+1;
+    }
+    while (y <= 0);
+  }
+}
+  
+// Draw a filled ellipse.
+// cx: specifies the X position
+// cy: specifies the Y position
+// radius1: minor radius of ellipse.
+// radius2: major radius of ellipse.
+// fillcolor  : specifies the Color to use for Fill the Ellipse.
+// bordercolor: specifies the Color to use for draw the Border from the Ellipse.
+void VGA_T4::drawfilledellipse(int16_t cx, int16_t cy, uint16_t radius1, uint16_t radius2, vga_pixel fillcolor, vga_pixel bordercolor){
+  int x = -radius1, y = 0, err = 2-2*radius1, e2;
+  float K = 0, rad1 = 0, rad2 = 0;
+
+  rad1 = radius1;
+  rad2 = radius2;
+
+  if (radius1 > radius2)
+  {
+    do
+    {
+      K = (float)(rad1/rad2);
+      drawline((cx+x), (cy-(uint16_t)(y/K)), (cx+x), (cy-(uint16_t)(y/K)) + (2*(uint16_t)(y/K) + 1) , fillcolor);
+      drawline((cx-x), (cy-(uint16_t)(y/K)), (cx-x), (cy-(uint16_t)(y/K)) + (2*(uint16_t)(y/K) + 1) , fillcolor);
+
+      e2 = err;
+      if (e2 <= y)
+      {
+        err += ++y*2+1;
+        if (-x == y && e2 <= x) e2 = 0;
+      }
+      if (e2 > x) err += ++x*2+1;
+
+    }
+    while (x <= 0);
+  }
+  else
+  {
+    y = -radius2;
+    x = 0;
+    do
+    {
+      K = (float)(rad2/rad1);
+      drawline((cx-(uint16_t)(x/K)), (cy+y), (cx-(uint16_t)(x/K)) + (2*(uint16_t)(x/K) + 1), (cy+y) , fillcolor);
+      drawline((cx-(uint16_t)(x/K)), (cy-y), (cx-(uint16_t)(x/K)) + (2*(uint16_t)(x/K) + 1), (cy-y) , fillcolor);
+
+      e2 = err;
+      if (e2 <= x)
+      {
+        err += ++x*2+1;
+        if (-y == x && e2 <= y) e2 = 0;
+      }
+      if (e2 > y) err += ++y*2+1;
+    }
+    while (y <= 0);
+  }
+  drawellipse(cx,cy,radius1,radius2,bordercolor);
+}
+  
+//--------------------------------------------------------------
+// Draw a Triangle.
+// ax,ay, bx,by, cx,cy - the triangle points.
+// color    - color of the triangle.
+//--------------------------------------------------------------
+void VGA_T4::drawtriangle(int16_t ax, int16_t ay, int16_t bx, int16_t by, int16_t cx, int16_t cy, vga_pixel color){
+  drawline(ax , ay , bx , by , color);
+  drawline(bx , by , cx , cy , color);
+  drawline(cx , cy , ax , ay , color);
+}
+  
+//--------------------------------------------------------------
+// Draw a Filled Triangle.
+// ax,ay, bx,by, cx,cy - the triangle points.
+// fillcolor - specifies the Color to use for Fill the triangle.
+// bordercolor - specifies the Color to use for draw the Border from the triangle.
+//--------------------------------------------------------------
+void VGA_T4::drawfilledtriangle(int16_t ax, int16_t ay, int16_t bx, int16_t by, int16_t cx, int16_t cy, vga_pixel fillcolor, vga_pixel bordercolor){
+  float ma, mb, mc    ; //'gradient of the lines
+  float start, finish ; //'draw a line from start to finish!
+  float tempspace     ; //'temporary storage for swapping values...
+  double x1,x2,x3      ;
+  double y1,y2,y3      ;
+  int16_t n           ;
+
+  //' need to sort out ay, by and cy into order.. highest to lowest
+  //'
+  if(ay < by)
+  {
+    //'swap x's
+    tempspace = ax;
+    ax = bx;
+    bx = tempspace;
+
+    //'swap y's
+    tempspace = ay;
+    ay = by;
+    by = tempspace;
+  }
+
+  if(ay < cy)
+  {
+    //'swap x's
+    tempspace = ax;
+    ax = cx;
+    cx = tempspace;
+
+    //'swap y's
+    tempspace = ay;
+    ay = cy;
+    cy = tempspace;
+  }
+
+  if(by < cy)
+  {
+    //'swap x's
+    tempspace = bx;
+    bx = cx;
+    cx = tempspace;
+
+    //'swap y's
+    tempspace = by;
+    by = cy;
+    cy = tempspace;
+  }
+
+  //' Finally - copy the values in order...
+
+  x1 = ax; x2 = bx; x3 = cx;
+  y1 = ay; y2 = by; y3 = cy;
+
+  //'bodge if y coordinates are the same
+  if(y1 == y2)  y2 = y2 + 0.01;
+  if(y2 == y3)  y3 = y3 + 0.01;
+  if(y1 == y3)  y3 = y3 + 0.01;
+
+  ma = (x1 - x2) / (y1 - y2);
+  mb = (x3 - x2) / (y2 - y3);
+  mc = (x3 - x1) / (y1 - y3);
+
+  //'from y1 to y2
+  for(n = 0;n >= (y2 - y1);n--)
+  {
+    start = n * mc;
+    finish = n * ma;
+    drawline((int16_t)(x1 - start), (int16_t)(n + y1), (int16_t)(x1 + finish), (int16_t)(n + y1), fillcolor);
+  }
+
+
+  //'and from y2 to y3
+
+  for(n = 0;n >= (y3 - y2);n--)
+  {
+    start = n * mc;
+    finish = n * mb;
+    drawline((int16_t)(x1 - start - ((y2 - y1) * mc)), (int16_t)(n + y2), (int16_t)(x2 - finish), (int16_t)(n + y2), fillcolor);
+  }
+
+  // draw the border color triangle
+  drawtriangle(ax,ay,bx,by,cx,cy,bordercolor);
+}
+
+/*  
+//--------------------------------------------------------------
+//  Displays a Rectangle at a given Angle.
+//  centerx     : specifies the center of the Rectangle.
+//  centery
+//  w,h   : specifies the size of the Rectangle.
+//  angle     : specifies the angle for drawing the rectangle
+//  color       : specifies the Color to use for Fill the Rectangle.
+//--------------------------------------------------------------
+void VGA_T4::drawquad(int16_t centerx, int16_t centery, int16_t w, int16_t h, int16_t angle, vga_pixel color){
+  int16_t px[4],py[4];
+  float l;
+  float raddeg = 3.14159 / 180;
+  float w2 = w / 2.0;
+  float h2 = h / 2.0;
+  float vec = (w2*w2)+(h2*h2);
+  float w2l;
+  float pangle[4];
+
+  l = sqrtf(vec);
+  w2l = w2 / l;
+  pangle[0] = acosf(w2l) / raddeg;
+  pangle[1] = 180.0 - (acosf(w2l) / raddeg);
+  pangle[2] = 180.0 + (acosf(w2l) / raddeg);
+  pangle[3] = 360.0 - (acosf(w2l) / raddeg);
+  px[0] = (int16_t)(calcco[((int16_t)(pangle[0]) + angle) % 360] * l + centerx);
+  py[0] = (int16_t)(calcsi[((int16_t)(pangle[0]) + angle) % 360] * l + centery);
+  px[1] = (int16_t)(calcco[((int16_t)(pangle[1]) + angle) % 360] * l + centerx);
+  py[1] = (int16_t)(calcsi[((int16_t)(pangle[1]) + angle) % 360] * l + centery);
+  px[2] = (int16_t)(calcco[((int16_t)(pangle[2]) + angle) % 360] * l + centerx);
+  py[2] = (int16_t)(calcsi[((int16_t)(pangle[2]) + angle) % 360] * l + centery);
+  px[3] = (int16_t)(calcco[((int16_t)(pangle[3]) + angle) % 360] * l + centerx);
+  py[3] = (int16_t)(calcsi[((int16_t)(pangle[3]) + angle) % 360] * l + centery);
+  // here we draw the quad
+  drawline(px[0],py[0],px[1],py[1],color);
+  drawline(px[1],py[1],px[2],py[2],color);
+  drawline(px[2],py[2],px[3],py[3],color);
+  drawline(px[3],py[3],px[0],py[0],color);
+}
+  
+//--------------------------------------------------------------
+//  Displays a filled Rectangle at a given Angle.
+//  centerx     : specifies the center of the Rectangle.
+//  centery
+//  w,h   : specifies the size of the Rectangle.
+//  angle     : specifies the angle for drawing the rectangle
+//  fillcolor     : specifies the Color to use for Fill the Rectangle.
+//  bordercolor   : specifies the Color to use for draw the Border from the Rectangle.
+//--------------------------------------------------------------
+void VGA_T4::drawfilledquad(int16_t centerx, int16_t centery, int16_t w, int16_t h, int16_t angle, vga_pixel fillcolor, vga_pixel bordercolor){
+  int16_t px[4],py[4];
+  float l;
+  float raddeg = 3.14159 / 180;
+  float w2 = w / 2.0;
+  float h2 = h / 2.0;
+  float vec = (w2*w2)+(h2*h2);
+  float w2l;
+  float pangle[4];
+
+  l = sqrtf(vec);
+  w2l = w2 / l;
+  pangle[0] = acosf(w2l) / raddeg;
+  pangle[1] = 180.0 - (acosf(w2l) / raddeg);
+  pangle[2] = 180.0 + (acosf(w2l) / raddeg);
+  pangle[3] = 360.0 - (acosf(w2l) / raddeg);
+  px[0] = (int16_t)(calcco[((int16_t)(pangle[0]) + Angle) % 360] * l + centerx);
+  py[0] = (int16_t)(calcsi[((int16_t)(pangle[0]) + Angle) % 360] * l + centery);
+  px[1] = (int16_t)(calcco[((int16_t)(pangle[1]) + Angle) % 360] * l + centerx);
+  py[1] = (int16_t)(calcsi[((int16_t)(pangle[1]) + Angle) % 360] * l + centery);
+  px[2] = (int16_t)(calcco[((int16_t)(pangle[2]) + Angle) % 360] * l + centerx);
+  py[2] = (int16_t)(calcsi[((int16_t)(pangle[2]) + Angle) % 360] * l + centery);
+  px[3] = (int16_t)(calcco[((int16_t)(pangle[3]) + Angle) % 360] * l + centerx);
+  py[3] = (int16_t)(calcsi[((int16_t)(pangle[3]) + Angle) % 360] * l + centery);
+  // We draw 2 filled triangle for made the quad
+  // To be uniform we have to use only the Fillcolor
+  drawfilledtriangle(px[0],py[0],px[1],py[1],px[2],py[2],fillcolor,fillcolor);
+  drawfilledtriangle(px[2],py[2],px[3],py[3],px[0],py[0],fillcolor,fillcolor);
+  // here we draw the BorderColor from the quad
+  drawline(px[0],py[0],px[1],py[1],bordercolor);
+  drawline(px[1],py[1],px[2],py[2],bordercolor);
+  drawline(px[2],py[2],px[3],py[3],bordercolor);
+  drawline(px[3],py[3],px[0],py[0],bordercolor);
+}
+*/ 

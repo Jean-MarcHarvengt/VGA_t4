@@ -41,10 +41,14 @@ typedef uint8_t vga_pixel;
 
 typedef enum vga_mode_t
 {
-	VGA_MODE_352x240 = 0,
-  VGA_MODE_352x480 = 1,
-	VGA_MODE_512x240 = 2,
-  VGA_MODE_512x480 = 3
+  VGA_MODE_320x240 = 0,
+  VGA_MODE_320x480 = 1,
+	VGA_MODE_352x240 = 2,
+  VGA_MODE_352x480 = 3,
+  VGA_MODE_512x240 = 4,
+  VGA_MODE_512x480 = 5,
+  VGA_MODE_640x240 = 6,
+  VGA_MODE_640x480 = 7
 } vga_mode_t;
 
 
@@ -93,6 +97,18 @@ public:
   void writeLine(int width, int height, int stride, uint8_t *buffer, vga_pixel *palette16);
   void writeScreen(int width, int height, int stride, uint8_t *buffer, vga_pixel *palette16);
 
+  // ************************************** GFX API extension from darthvader ******************************************************
+  void drawline(int16_t x1, int16_t y1, int16_t x2, int16_t y2, vga_pixel color);
+  void drawcircle(int16_t x, int16_t y, uint16_t radius, vga_pixel color);
+  void drawfilledcircle(int16_t x, int16_t y, int16_t radius, vga_pixel fillcolor, vga_pixel bordercolor);
+  void drawellipse(int16_t cx, int16_t cy, uint16_t radius1, uint16_t radius2, vga_pixel color);
+  void drawfilledellipse(int16_t cx, int16_t cy, uint16_t radius1, uint16_t radius2, vga_pixel fillcolor, vga_pixel bordercolor);
+  void drawtriangle(int16_t ax, int16_t ay, int16_t bx, int16_t by, int16_t cx, int16_t cy, vga_pixel color);
+  void drawfilledtriangle(int16_t ax, int16_t ay, int16_t bx, int16_t by, int16_t cx, int16_t cy, vga_pixel fillcolor, vga_pixel bordercolor);
+  //void drawquad(int16_t centerx, int16_t centery, int16_t w, int16_t h, int16_t angle, vga_pixel color);
+  //void drawfilledquad(int16_t centerx, int16_t centery, int16_t w, int16_t h, int16_t angle, vga_pixel fillcolor, vga_pixel bordercolor);
+  // *******************************************************************************************************************************
+
 private:
   static uint8_t _vsync_pin;
   static uint32_t currentLine;
@@ -101,9 +117,6 @@ private:
 
   static void QT3_isr(void);
 };
-
-//extern uVGA uvga;
-//extern unsigned char _vga_font8x8[];
 
 
 #endif
