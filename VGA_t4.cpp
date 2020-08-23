@@ -336,6 +336,17 @@ vga_error_t VGA_T4::begin(vga_mode_t mode)
   *(portControlRegister(PIN_G_B3)) = 0xFF;
 #endif
 
+  /* Set video PLL */
+  // There are /1, /2, /4, /8, /16 post dividers for the Video PLL. 
+  // The output frequency can be set by programming the fields in the CCM_ANALOG_PLL_VIDEO, 
+  // and CCM_ANALOG_MISC2 register sets according to the following equation.
+  // PLL output frequency = Fref * (DIV_SELECT + NUM/DENOM)
+
+  CCM_ANALOG_PLL_VIDEO_NUM = 0;
+  CCM_ANALOG_PLL_VIDEO_DENOM = 1;
+  CCM_ANALOG_PLL_VIDEO = 0;
+  CCM_ANALOG_PLL_VIDEO |= (CCM_ANALOG_PLL_VIDEO_POST_DIV_SELECT(2) | CCM_ANALOG_PLL_VIDEO_ENABLE);
+
   /* Set clock for FlexIO1 and FlexIO2 */
   CCM_CCGR5 &= ~CCM_CCGR5_FLEXIO1(CCM_CCGR_ON);
   CCM_CDCDR = (CCM_CDCDR & ~(CCM_CDCDR_FLEXIO1_CLK_SEL(3) | CCM_CDCDR_FLEXIO1_CLK_PRED(7) | CCM_CDCDR_FLEXIO1_CLK_PODF(7))) 
