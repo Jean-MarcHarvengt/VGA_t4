@@ -34,7 +34,7 @@
 // - Only ok at 600MHz else some disturbances visible
 // - I did not tested on an HDMI display with VGA adapter
 
-#define TOP_BORDER    45
+#define TOP_BORDER    40
 #define PIN_HBLANK    15
 
 #ifdef BITS12
@@ -147,6 +147,7 @@ static int fb_width;
 static int fb_height;
 static int fb_stride;
 static int left_border;
+static int right_border;
 static int line_double;
 static int pix_shift;
 
@@ -251,7 +252,7 @@ FASTRUN void VGA_T4::QT3_isr(void) {
     else 
     {
       // Aligned 32 bits copy
-      p=(uint32_t *)&gfxbuffer[fb_stride*y];
+      p=(uint32_t *)&gfxbuffer[fb_stride*y+(pix_shift&0xf)];
       flexio1DMA.TCD->NBYTES = 4;
       flexio1DMA.TCD->SADDR = p;
       flexio1DMA.TCD->SOFF = 4;
@@ -299,10 +300,9 @@ VGA_T4::VGA_T4(int vsync_pin = DEFAULT_VSYNC_PIN)
 #define pix_freq       (line_freq*800) // Hz
 
 // pix_period = 39.7ns
-// H-PULSE is 3.8133us = 3813.3ns => 96 pixels
+// H-PULSE is 3.8133us = 3813.3ns => 96 pixels (see above for the rest)
 #define frontporch_pix  16
-#define syncpulse_pix   96 
-#define backporch_pix   48 //32 //48 
+#define backporch_pix   48
 
 // Flexio Clock
 // PLL3 SW CLOCK    (3) => 480 MHz
@@ -321,19 +321,21 @@ vga_error_t VGA_T4::begin(vga_mode_t mode)
 
   switch(mode) {
     case VGA_MODE_320x240:
-      left_border = (syncpulse_pix+backporch_pix)/2;
+      left_border = backporch_pix/2;
+      right_border = frontporch_pix/2;
       fb_width = 320;
       fb_height = 240 ;
-      fb_stride = fb_width+left_border;
+      fb_stride = left_border+fb_width+right_border;
       flexio_clock_div = flexio_freq/(pix_freq/2);
       line_double = 1;
       pix_shift = 2+DMA_HACK;
       break;
     case VGA_MODE_320x480:
-      left_border = (syncpulse_pix+backporch_pix)/2;
+      left_border = backporch_pix/2;
+      right_border = frontporch_pix/2;
       fb_width = 320;
       fb_height = 480 ;
-      fb_stride = fb_width+left_border;
+      fb_stride = left_border+fb_width+right_border;
       flexio_clock_div = flexio_freq/(pix_freq/2);
       line_double = 0;
       pix_shift = 2+DMA_HACK;
@@ -375,19 +377,21 @@ vga_error_t VGA_T4::begin(vga_mode_t mode)
       pix_shift = 0;
       break;
     case VGA_MODE_640x240:
-      left_border = frontporch_pix + syncpulse_pix+backporch_pix;
+      left_border = backporch_pix;
+      right_border = frontporch_pix;
       fb_width = 640;
       fb_height = 240 ;
-      fb_stride = fb_width+left_border;
+      fb_stride = left_border+fb_width+right_border;
       flexio_clock_div = flexio_freq/pix_freq+6;
       line_double = 1;
-      pix_shift = 0; //4+DMA_HACK;
+      pix_shift = 0;//4+DMA_HACK;
       break;
     case VGA_MODE_640x480:
-      left_border = frontporch_pix + syncpulse_pix + backporch_pix;
+      left_border = backporch_pix;
+      right_border = frontporch_pix;
       fb_width = 640;
       fb_height = 480 ;
-      fb_stride = fb_width+left_border;
+      fb_stride = left_border+fb_width+right_border;
       flexio_clock_div = flexio_freq/pix_freq+6;
       line_double = 0;
       pix_shift = 0; //4+DMA_HACK;
@@ -568,17 +572,25 @@ vga_error_t VGA_T4::begin(vga_mode_t mode)
   CCM_CCGR6 |= 0xC0000000;              //enable clocks to CG15 of CGR6 for QT3
   //configure QTIMER3 Timer3 for test of alternating Compare1 and Compare2
   
-  #define MARGIN_N 1005
+  #define MARGIN_N 1008 //5
   #define MARGIN_D 1000
 
   TMR3_CTRL3 = 0b0000000000100000;      //stop all functions of timer 
-  TMR3_SCTRL3 = 0b0000000000000001;     //0(TimerCompareFlag),0(TimerCompareIntEnable),00(TimerOverflow)0000(NoCapture),0000(Capture Disabled),00, 0,1(OFLAG to Ext Pin)
+//  TMR3_SCTRL3 = 0b0000000000000001;     //0(TimerCompareFlag),0(TimerCompareIntEnable),00(TimerOverflow)0000(NoCapture),0000(Capture Disabled),00, 0,1(OFLAG to Ext Pin)
+  // Invert output pin as we want the interupt on rising edge
+  TMR3_SCTRL3 = 0b0000000000000011;     //0(TimerCompareFlag),0(TimerCompareIntEnable),00(TimerOverflow)0000(NoCapture),0000(Capture Disabled),00, 1(INV output),1(OFLAG to Ext Pin)
   TMR3_CNTR3 = 0;
   TMR3_LOAD3 = 0;
-  TMR3_COMP13 = ((569*MARGIN_N)/MARGIN_D)-1;
-  TMR3_CMPLD13 = ((569*MARGIN_N)/MARGIN_D)-1;
-  TMR3_COMP23 = ((4174*MARGIN_N)/MARGIN_D)-1;
-  TMR3_CMPLD23 = ((4174*MARGIN_N)/MARGIN_D)-1;
+//  TMR3_COMP13 = ((569*MARGIN_N)/MARGIN_D)-1;
+//  TMR3_CMPLD13 = ((569*MARGIN_N)/MARGIN_D)-1;
+//  TMR3_COMP23 = ((4174*MARGIN_N)/MARGIN_D)-1;
+//  TMR3_CMPLD23 = ((4174*MARGIN_N)/MARGIN_D)-1;
+  /* Inverted timings */
+  TMR3_COMP13 = ((4174*MARGIN_N)/MARGIN_D)-1;
+  TMR3_CMPLD13 = ((4174*MARGIN_N)/MARGIN_D)-1;
+  TMR3_COMP23 = ((569*MARGIN_N)/MARGIN_D)-1;
+  TMR3_CMPLD23 = ((569*MARGIN_N)/MARGIN_D)-1;
+
   TMR3_CSCTRL3 = 0b0000000010000101;    //Compare1 only enabled - Compare Load1 control and Compare Load2 control both on
   TMR3_CTRL3 = 0b0011000000100100;      // 001(Count rising edges Primary Source),1000(IP Bus Clock),00 (Secondary Source), 
                                         // 0(Count Once),1(Count up to Compare),0(Count Up),0(Co Channel Init),100(Toggle OFLAG on alternating Compare1/Compare2)
