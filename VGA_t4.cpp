@@ -146,6 +146,7 @@ static vga_pixel * framebuffer;
 static int fb_width;
 static int fb_height;
 static int fb_stride;
+static int maxpixperline;
 static int left_border;
 static int right_border;
 static int line_double;
@@ -208,9 +209,9 @@ FASTRUN void VGA_T4::QT3_isr(void) {
     flexio2DMA.TCD->NBYTES = 4;
     flexio2DMA.TCD->SADDR = p;
     flexio2DMA.TCD->SOFF = 4;
-    flexio2DMA.TCD->SLAST = -fb_stride;
-    flexio2DMA.TCD->BITER = fb_stride / 4;
-    flexio2DMA.TCD->CITER = fb_stride / 4;
+    flexio2DMA.TCD->SLAST = -maxpixperline;
+    flexio2DMA.TCD->BITER = maxpixperline / 4;
+    flexio2DMA.TCD->CITER = maxpixperline / 4;
     flexio2DMA.TCD->DADDR = &FLEXIO2_SHIFTBUF0;
     flexio2DMA.TCD->DOFF = 0;
     flexio2DMA.TCD->DLASTSGA = 0;
@@ -224,9 +225,9 @@ FASTRUN void VGA_T4::QT3_isr(void) {
         flexio1DMA.TCD->NBYTES = 4;
         flexio1DMA.TCD->SADDR = p;
         flexio1DMA.TCD->SOFF = 4;
-        flexio1DMA.TCD->SLAST = -fb_stride;
-        flexio1DMA.TCD->BITER = fb_stride / 4;
-        flexio1DMA.TCD->CITER = fb_stride / 4;
+        flexio1DMA.TCD->SLAST = -maxpixperline;
+        flexio1DMA.TCD->BITER = maxpixperline / 4;
+        flexio1DMA.TCD->CITER = maxpixperline / 4;
         flexio1DMA.TCD->DADDR = &FLEXIO1_SHIFTBUFNBS0;
         flexio1DMA.TCD->DOFF = 0;
         flexio1DMA.TCD->DLASTSGA = 0;
@@ -236,12 +237,12 @@ FASTRUN void VGA_T4::QT3_isr(void) {
       else  {
         // Unaligned (source) 32 bits copy
         uint8_t * p2=(uint8_t *)&gfxbuffer[fb_stride*y+(pix_shift&0xf)];
-        flexio1DMA.TCD->CITER = fb_stride / 4;
-        flexio1DMA.TCD->BITER = fb_stride / 4;
+        flexio1DMA.TCD->CITER = maxpixperline / 4;
+        flexio1DMA.TCD->BITER = maxpixperline / 4;
         flexio1DMA.TCD->SADDR = p2;
         flexio1DMA.TCD->NBYTES = 4;
         flexio1DMA.TCD->SOFF = 1;
-        flexio1DMA.TCD->SLAST = -fb_stride;
+        flexio1DMA.TCD->SLAST = -maxpixperline;
         flexio1DMA.TCD->DADDR = &FLEXIO1_SHIFTBUFNBS0;
         flexio1DMA.TCD->DOFF = 0;
         flexio1DMA.TCD->DLASTSGA = 0;
@@ -256,9 +257,9 @@ FASTRUN void VGA_T4::QT3_isr(void) {
       flexio1DMA.TCD->NBYTES = 4;
       flexio1DMA.TCD->SADDR = p;
       flexio1DMA.TCD->SOFF = 4;
-      flexio1DMA.TCD->SLAST = -fb_stride;
-      flexio1DMA.TCD->BITER = fb_stride / 4;
-      flexio1DMA.TCD->CITER = fb_stride / 4;
+      flexio1DMA.TCD->SLAST = -maxpixperline;
+      flexio1DMA.TCD->BITER = maxpixperline / 4;
+      flexio1DMA.TCD->CITER = maxpixperline / 4;
       flexio1DMA.TCD->DADDR = &FLEXIO1_SHIFTBUFNBS0;
       flexio1DMA.TCD->DOFF = 0;
       flexio1DMA.TCD->DLASTSGA = 0;
@@ -326,6 +327,7 @@ vga_error_t VGA_T4::begin(vga_mode_t mode)
       fb_width = 320;
       fb_height = 240 ;
       fb_stride = left_border+fb_width+right_border;
+      maxpixperline = fb_stride;
       flexio_clock_div = flexio_freq/(pix_freq/2);
       line_double = 1;
       pix_shift = 2+DMA_HACK;
@@ -336,6 +338,7 @@ vga_error_t VGA_T4::begin(vga_mode_t mode)
       fb_width = 320;
       fb_height = 480 ;
       fb_stride = left_border+fb_width+right_border;
+      maxpixperline = fb_stride;
       flexio_clock_div = flexio_freq/(pix_freq/2);
       line_double = 0;
       pix_shift = 2+DMA_HACK;
@@ -345,6 +348,7 @@ vga_error_t VGA_T4::begin(vga_mode_t mode)
       fb_width = 352;
       fb_height = 240 ;
       fb_stride = fb_width+left_border;
+      maxpixperline = fb_stride;
       flexio_clock_div = 35;
       line_double = 1;
       pix_shift = 2+DMA_HACK;
@@ -354,6 +358,7 @@ vga_error_t VGA_T4::begin(vga_mode_t mode)
       fb_width = 352;
       fb_height = 480 ;
       fb_stride = fb_width+left_border;
+      maxpixperline = fb_stride;
       flexio_clock_div = 35;
       line_double = 0;
       pix_shift = 2+DMA_HACK;
@@ -363,6 +368,7 @@ vga_error_t VGA_T4::begin(vga_mode_t mode)
       fb_width = 512;
       fb_height = 240 ;
       fb_stride = fb_width+left_border;
+      maxpixperline = fb_stride;
       flexio_clock_div = 24;
       line_double = 1;
       pix_shift = 0;
@@ -372,6 +378,7 @@ vga_error_t VGA_T4::begin(vga_mode_t mode)
       fb_width = 512;
       fb_height = 480 ;
       fb_stride = fb_width+left_border;
+      maxpixperline = fb_stride;
       flexio_clock_div = 24;
       line_double = 0;
       pix_shift = 0;
@@ -382,6 +389,7 @@ vga_error_t VGA_T4::begin(vga_mode_t mode)
       fb_width = 640;
       fb_height = 240 ;
       fb_stride = left_border+fb_width+right_border;
+      maxpixperline = fb_stride-92;
       flexio_clock_div = flexio_freq/pix_freq+6;
       line_double = 1;
       pix_shift = 0;//4+DMA_HACK;
@@ -392,7 +400,10 @@ vga_error_t VGA_T4::begin(vga_mode_t mode)
       fb_width = 640;
       fb_height = 480 ;
       fb_stride = left_border+fb_width+right_border;
+      maxpixperline = fb_stride-92;
       flexio_clock_div = flexio_freq/pix_freq+6;
+      Serial.println("frequency");
+      Serial.println(flexio_clock_div);
       line_double = 0;
       pix_shift = 0; //4+DMA_HACK;
       break;
