@@ -19,6 +19,7 @@
 #include <Arduino.h>
 #include <avr_emulation.h>
 #include <DMAChannel.h>
+#include <math.h>
 
 
 // Enable debug info (requires serial initialization)
@@ -43,7 +44,7 @@ typedef enum vga_mode_t
 {
   VGA_MODE_320x240 = 0,
   VGA_MODE_320x480 = 1,
-	VGA_MODE_352x240 = 2,
+  VGA_MODE_352x240 = 2,
   VGA_MODE_352x480 = 3,
   VGA_MODE_512x240 = 4,
   VGA_MODE_512x480 = 5,
@@ -105,8 +106,8 @@ public:
   void drawfilledellipse(int16_t cx, int16_t cy, uint16_t radius1, uint16_t radius2, vga_pixel fillcolor, vga_pixel bordercolor);
   void drawtriangle(int16_t ax, int16_t ay, int16_t bx, int16_t by, int16_t cx, int16_t cy, vga_pixel color);
   void drawfilledtriangle(int16_t ax, int16_t ay, int16_t bx, int16_t by, int16_t cx, int16_t cy, vga_pixel fillcolor, vga_pixel bordercolor);
-  //void drawquad(int16_t centerx, int16_t centery, int16_t w, int16_t h, int16_t angle, vga_pixel color);
-  //void drawfilledquad(int16_t centerx, int16_t centery, int16_t w, int16_t h, int16_t angle, vga_pixel fillcolor, vga_pixel bordercolor);
+  void drawquad(int16_t centerx, int16_t centery, int16_t w, int16_t h, int16_t angle, vga_pixel color);
+  void drawfilledquad(int16_t centerx, int16_t centery, int16_t w, int16_t h, int16_t angle, vga_pixel fillcolor, vga_pixel bordercolor);
   // *******************************************************************************************************************************
 
 private:
