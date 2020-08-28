@@ -34,6 +34,9 @@
 // - Only ok at 600MHz else some disturbances visible
 // - I did not tested on an HDMI display with VGA adapter
 
+
+#define USE_VIDEO_PLL 1
+
 #define TOP_BORDER    40
 #define PIN_HBLANK    15
 
@@ -141,17 +144,18 @@ const float calcco[360]={
 
 // Full buffer including back/front porch 
 static vga_pixel * gfxbuffer __attribute__((aligned(32)));
+static uint32_t dstbuffer __attribute__((aligned(32)));
+
 // Visible vuffer
 static vga_pixel * framebuffer;
-static int fb_width;
-static int fb_height;
-static int fb_stride;
-static int maxpixperline;
-static int left_border;
-static int right_border;
-static int line_double;
-static int pix_shift;
-
+static int  fb_width;
+static int  fb_height;
+static int  fb_stride;
+static int  maxpixperline;
+static int  left_border;
+static int  right_border;
+static int  line_double;
+static int  pix_shift;
 
 #ifdef DEBUG
 static uint32_t   ISRTicks_prev = 0;
@@ -163,7 +167,6 @@ uint32_t   VGA_T4::currentLine=0;
 DMAChannel VGA_T4::flexio1DMA;
 DMAChannel VGA_T4::flexio2DMA; 
 static volatile uint32_t VSYNC = 0;
-
 #define NOP asm volatile("nop\n\t");
 
 
@@ -201,74 +204,32 @@ FASTRUN void VGA_T4::QT3_isr(void) {
     flexio1DMA.enable();
     */
 
-    DMA_CERQ = flexio2DMA.channel; // Disable DMAs
+    // Disable DMAs
+    DMA_CERQ = flexio2DMA.channel;
     DMA_CERQ = flexio1DMA.channel; 
-    
+    // Setup source adress
     // Aligned 32 bits copy
+#ifdef USE_VIDEO_PLL 
+    // DMA delay is different in this case...
+    unsigned long * p=(uint32_t *)&gfxbuffer[fb_stride*y+4];
+#else
     unsigned long * p=(uint32_t *)&gfxbuffer[fb_stride*y];
-    flexio2DMA.TCD->NBYTES = 4;
+#endif    
     flexio2DMA.TCD->SADDR = p;
-    flexio2DMA.TCD->SOFF = 4;
-    flexio2DMA.TCD->SLAST = -maxpixperline;
-    flexio2DMA.TCD->BITER = maxpixperline / 4;
-    flexio2DMA.TCD->CITER = maxpixperline / 4;
-    flexio2DMA.TCD->DADDR = &FLEXIO2_SHIFTBUF0;
-    flexio2DMA.TCD->DOFF = 0;
-    flexio2DMA.TCD->DLASTSGA = 0;
-    flexio2DMA.TCD->ATTR = DMA_TCD_ATTR_SSIZE(2) | DMA_TCD_ATTR_DSIZE(2); // 32bits
-    flexio2DMA.TCD->CSR |= DMA_TCD_CSR_DREQ;
     if (pix_shift & DMA_HACK) 
     {
-      if (pix_shift & 0x3 == 0) {
-        // Aligned 32 bits copy
-        p=(uint32_t *)&gfxbuffer[fb_stride*y+(pix_shift&0xf)];
-        flexio1DMA.TCD->NBYTES = 4;
-        flexio1DMA.TCD->SADDR = p;
-        flexio1DMA.TCD->SOFF = 4;
-        flexio1DMA.TCD->SLAST = -maxpixperline;
-        flexio1DMA.TCD->BITER = maxpixperline / 4;
-        flexio1DMA.TCD->CITER = maxpixperline / 4;
-        flexio1DMA.TCD->DADDR = &FLEXIO1_SHIFTBUFNBS0;
-        flexio1DMA.TCD->DOFF = 0;
-        flexio1DMA.TCD->DLASTSGA = 0;
-        flexio1DMA.TCD->ATTR = DMA_TCD_ATTR_SSIZE(2) | DMA_TCD_ATTR_DSIZE(2); // 32bits
-        flexio1DMA.TCD->CSR |= DMA_TCD_CSR_DREQ;
-      }
-      else  {
-        // Unaligned (source) 32 bits copy
-        uint8_t * p2=(uint8_t *)&gfxbuffer[fb_stride*y+(pix_shift&0xf)];
-        flexio1DMA.TCD->CITER = maxpixperline / 4;
-        flexio1DMA.TCD->BITER = maxpixperline / 4;
-        flexio1DMA.TCD->SADDR = p2;
-        flexio1DMA.TCD->NBYTES = 4;
-        flexio1DMA.TCD->SOFF = 1;
-        flexio1DMA.TCD->SLAST = -maxpixperline;
-        flexio1DMA.TCD->DADDR = &FLEXIO1_SHIFTBUFNBS0;
-        flexio1DMA.TCD->DOFF = 0;
-        flexio1DMA.TCD->DLASTSGA = 0;
-        flexio1DMA.TCD->ATTR = DMA_TCD_ATTR_SSIZE(0) | DMA_TCD_ATTR_DSIZE(2); // 8bits to 32bits
-        flexio1DMA.TCD->CSR |= DMA_TCD_CSR_DREQ; // disable on completion
-      }	
+      // Unaligned copy
+      uint8_t * p2=(uint8_t *)&gfxbuffer[fb_stride*y+(pix_shift&0xf)];
+      flexio1DMA.TCD->SADDR = p2;
     }
-    else 
-    {
-      // Aligned 32 bits copy
+    else  {
       p=(uint32_t *)&gfxbuffer[fb_stride*y+(pix_shift&0xf)];
-      flexio1DMA.TCD->NBYTES = 4;
       flexio1DMA.TCD->SADDR = p;
-      flexio1DMA.TCD->SOFF = 4;
-      flexio1DMA.TCD->SLAST = -maxpixperline;
-      flexio1DMA.TCD->BITER = maxpixperline / 4;
-      flexio1DMA.TCD->CITER = maxpixperline / 4;
-      flexio1DMA.TCD->DADDR = &FLEXIO1_SHIFTBUFNBS0;
-      flexio1DMA.TCD->DOFF = 0;
-      flexio1DMA.TCD->DLASTSGA = 0;
-      flexio1DMA.TCD->ATTR = DMA_TCD_ATTR_SSIZE(2) | DMA_TCD_ATTR_DSIZE(2); // 32bits
-      flexio1DMA.TCD->CSR |= DMA_TCD_CSR_DREQ;
-    }      
+    }
+    // Enable DMAs
     DMA_SERQ = flexio2DMA.channel; 
-    DMA_SERQ = flexio1DMA.channel; // Enable DMAs
-
+    if (fb_width <= 544)
+      DMA_SERQ = flexio1DMA.channel; 
     arm_dcache_flush((void*)((uint32_t *)&gfxbuffer[fb_stride*y]), fb_stride);
   }
   sei();  
@@ -297,22 +258,49 @@ VGA_T4::VGA_T4(int vsync_pin = DEFAULT_VSYNC_PIN)
 // Whole line          800  31.777557100298 us
 
 #define frame_freq     60.0     // Hz
-#define line_freq      31468.75 // Hz
-#define pix_freq       (line_freq*800) // Hz
+#define line_freq      31.46875 // KHz
+#define pix_freq       (line_freq*800) // KHz (25.175 MHz)
 
 // pix_period = 39.7ns
 // H-PULSE is 3.8133us = 3813.3ns => 96 pixels (see above for the rest)
 #define frontporch_pix  16
-#define backporch_pix   48
+#define backporch_pix   48 //16 //48
 
 // Flexio Clock
 // PLL3 SW CLOCK    (3) => 480 MHz
-// PLL5 VIDEO CLOCK (2) => 649.52 MHz
-#define flexio_freq     480000000
-#define flexio_clk_sel  3
-//#define flexio_freq     649520000
-//#define flexio_clk_sel  2
+// PLL5 VIDEO CLOCK (2) => See formula for clock (we take 604200 KHz as /24 it gives 25175)
+#define FLEXIO_CLK_SEL_PLL3 3
+#define FLEXIO_CLK_SEL_PLL5 2
 
+
+/* Set video PLL */
+// There are /1, /2, /4, /8, /16 post dividers for the Video PLL. 
+// The output frequency can be set by programming the fields in the CCM_ANALOG_PLL_VIDEO, 
+// and CCM_ANALOG_MISC2 register sets according to the following equation.
+// PLL output frequency = Fref * (DIV_SELECT + NUM/DENOM)
+
+// nfact: 
+// This field controls the PLL loop divider. 
+// Valid range for DIV_SELECT divider value: 27~54.
+
+#define POST_DIV_SELECT 2
+static void set_videoClock(int nfact, int32_t nmult, uint32_t ndiv, bool force) // sets PLL5
+{
+if (!force && (CCM_ANALOG_PLL_VIDEO & CCM_ANALOG_PLL_VIDEO_ENABLE)) return;
+
+    CCM_ANALOG_PLL_VIDEO = CCM_ANALOG_PLL_VIDEO_BYPASS | CCM_ANALOG_PLL_VIDEO_ENABLE
+ 			             | CCM_ANALOG_PLL_VIDEO_POST_DIV_SELECT(1) // 2: 1/1; 1: 1/2; 0: 1/4
+ 			             | CCM_ANALOG_PLL_VIDEO_DIV_SELECT(nfact);  
+ 	CCM_ANALOG_PLL_VIDEO_NUM   = nmult /*& CCM_ANALOG_PLL_VIDEO_NUM_MASK*/;
+ 	CCM_ANALOG_PLL_VIDEO_DENOM = ndiv /*& CCM_ANALOG_PLL_VIDEO_DENOM_MASK*/;  	
+ 	CCM_ANALOG_PLL_VIDEO &= ~CCM_ANALOG_PLL_VIDEO_POWERDOWN;//Switch on PLL
+ 	while (!(CCM_ANALOG_PLL_VIDEO & CCM_ANALOG_PLL_VIDEO_LOCK)) {}; //Wait for pll-lock  	
+   	
+   	const int div_post_pll = 1; // other values: 2,4
+  
+  	if(div_post_pll>3) CCM_ANALOG_MISC2 |= CCM_ANALOG_MISC2_DIV_MSB;  	
+  	CCM_ANALOG_PLL_VIDEO &= ~CCM_ANALOG_PLL_VIDEO_BYPASS;//Disable Bypass
+}
 
 
 // display VGA image
@@ -320,7 +308,190 @@ vga_error_t VGA_T4::begin(vga_mode_t mode)
 {
   uint32_t flexio_clock_div;
 
+  // Default PLL3
+  int flexio_clk_sel = FLEXIO_CLK_SEL_PLL3;
+  int flexio_freq = 480000;
+  int div_select;
+  int num ;
+  int denom;  
   switch(mode) {
+
+#ifdef USE_VIDEO_PLL
+    case VGA_MODE_320x240:
+      flexio_clk_sel = FLEXIO_CLK_SEL_PLL5;   
+      div_select = 49;
+      num = 135;
+      denom = 100;
+      flexio_freq = ( 24000*div_select + (num*24000)/denom )/POST_DIV_SELECT;
+      set_videoClock(div_select,num,denom,true);     
+      left_border = backporch_pix/2;
+      right_border = frontporch_pix/2;
+      fb_width = 320;
+      fb_height = 480 ;
+      fb_stride = left_border+fb_width+right_border;
+      maxpixperline = fb_stride;
+      flexio_clock_div = flexio_freq/(pix_freq/2);
+      line_double = 1;
+      pix_shift = 2+DMA_HACK;
+      break;
+    case VGA_MODE_320x480:
+      flexio_clk_sel = FLEXIO_CLK_SEL_PLL5;   
+      div_select = 49;
+      num = 135;
+      denom = 100;
+      flexio_freq = ( 24000*div_select + (num*24000)/denom )/POST_DIV_SELECT;
+      set_videoClock(div_select,num,denom,true);     
+      left_border = backporch_pix/2;
+      right_border = frontporch_pix/2;
+      fb_width = 320;
+      fb_height = 480 ;
+      fb_stride = left_border+fb_width+right_border;
+      maxpixperline = fb_stride;
+      flexio_clock_div = flexio_freq/(pix_freq/2); 
+      line_double = 0;
+      pix_shift = 2+DMA_HACK;
+      break;   
+
+    case VGA_MODE_640x240:
+      flexio_clk_sel = FLEXIO_CLK_SEL_PLL5;   
+      div_select = 49;
+      num = 135;
+      denom = 100;
+      flexio_freq = ( 24000*div_select + (num*24000)/denom )/POST_DIV_SELECT;
+      set_videoClock(div_select,num,denom,true);     
+      left_border = backporch_pix;
+      right_border = frontporch_pix;
+      fb_width = 640;
+      fb_height = 480 ;
+      fb_stride = left_border+fb_width+right_border;
+      maxpixperline = fb_stride;
+      flexio_clock_div = flexio_freq/pix_freq;
+      line_double = 1;
+      pix_shift = 0; //1+DMA_HACK;
+      break;
+    case VGA_MODE_640x480:
+      flexio_clk_sel = FLEXIO_CLK_SEL_PLL5;   
+      div_select = 49;
+      num = 135;
+      denom = 100;
+      flexio_freq = ( 24000*div_select + (num*24000)/denom )/POST_DIV_SELECT;
+      set_videoClock(div_select,num,denom,true);     
+      left_border = backporch_pix;
+      right_border = frontporch_pix;
+      fb_width = 640;
+      fb_height = 480 ;
+      fb_stride = left_border+fb_width+right_border;
+      maxpixperline = fb_stride;
+      flexio_clock_div = (flexio_freq/pix_freq); 
+      line_double = 0;
+      pix_shift = 0; //1+DMA_HACK;
+      break;   
+
+    case VGA_MODE_544x240:
+      flexio_clk_sel = FLEXIO_CLK_SEL_PLL5;   
+      div_select = 49;
+      num = 135;
+      denom = 100;
+      flexio_freq = ( 24000*div_select + (num*24000)/denom )/POST_DIV_SELECT;
+      set_videoClock(div_select,num,denom,true);     
+      left_border = backporch_pix;
+      right_border = frontporch_pix;
+      fb_width = 544;
+      fb_height = 480 ;
+      fb_stride = left_border+fb_width+right_border;
+      maxpixperline = fb_stride;
+      flexio_clock_div = flexio_freq/(pix_freq/1.2)+2;
+      line_double = 1;
+      pix_shift = 0;//+DMA_HACK;
+      break;
+    case VGA_MODE_544x480:
+      flexio_clk_sel = FLEXIO_CLK_SEL_PLL5;   
+      div_select = 49;
+      num = 135;
+      denom = 100;
+      flexio_freq = ( 24000*div_select + (num*24000)/denom )/POST_DIV_SELECT;
+      set_videoClock(div_select,num,denom,true);     
+      left_border = backporch_pix;
+      right_border = frontporch_pix;
+      fb_width = 544;
+      fb_height = 480 ;
+      fb_stride = left_border+fb_width+right_border;
+      maxpixperline = fb_stride;
+      flexio_clock_div = flexio_freq/(pix_freq/1.2)+2;
+      line_double = 0;
+      pix_shift = 0;//+DMA_HACK;
+      break;   
+
+    case VGA_MODE_512x240:
+      flexio_clk_sel = FLEXIO_CLK_SEL_PLL5;   
+      div_select = 49;
+      num = 135;
+      denom = 100;
+      flexio_freq = ( 24000*div_select + (num*24000)/denom )/POST_DIV_SELECT;
+      set_videoClock(div_select,num,denom,true);     
+      left_border = backporch_pix/1.3;
+      right_border = frontporch_pix/1.3;
+      fb_width = 512;
+      fb_height = 480 ;
+      fb_stride = left_border+fb_width+right_border;
+      maxpixperline = fb_stride;
+      flexio_clock_div = flexio_freq/(pix_freq/1.3); 
+      line_double = 1;
+      pix_shift = 0;//+DMA_HACK;
+      break;
+    case VGA_MODE_512x480:
+      flexio_clk_sel = FLEXIO_CLK_SEL_PLL5;   
+      div_select = 49;
+      num = 135;
+      denom = 100;
+      flexio_freq = ( 24000*div_select + (num*24000)/denom )/POST_DIV_SELECT;
+      set_videoClock(div_select,num,denom,true);     
+      left_border = backporch_pix/1.3;
+      right_border = frontporch_pix/1.3;
+      fb_width = 512;
+      fb_height = 480 ;
+      fb_stride = left_border+fb_width+right_border;
+      maxpixperline = fb_stride;
+      flexio_clock_div = flexio_freq/(pix_freq/1.3); 
+      line_double = 0;
+      pix_shift = 0;//+DMA_HACK;
+      break; 
+
+    case VGA_MODE_352x240:
+      flexio_clk_sel = FLEXIO_CLK_SEL_PLL5;   
+      div_select = 49;
+      num = 135;
+      denom = 100;
+      flexio_freq = ( 24000*div_select + (num*24000)/denom )/POST_DIV_SELECT;
+      set_videoClock(div_select,num,denom,true);     
+      left_border = backporch_pix/1.75;
+      right_border = frontporch_pix/1.75;
+      fb_width = 352;
+      fb_height = 480 ;
+      fb_stride = left_border+fb_width+right_border;
+      maxpixperline = fb_stride;
+      flexio_clock_div = flexio_freq/(pix_freq/1.75); 
+      line_double = 1;
+      pix_shift = 2+DMA_HACK;
+      break;
+    case VGA_MODE_352x480:
+      flexio_clk_sel = FLEXIO_CLK_SEL_PLL5;   
+      div_select = 49;
+      num = 135;
+      denom = 100;
+      flexio_freq = ( 24000*div_select + (num*24000)/denom )/POST_DIV_SELECT;
+      set_videoClock(div_select,num,denom,true);     
+      left_border = backporch_pix/1.75;
+      right_border = frontporch_pix/1.75;
+      fb_width = 352;
+      fb_height = 480 ;
+      fb_stride = left_border+fb_width+right_border;
+      maxpixperline = fb_stride;
+      flexio_clock_div = flexio_freq/(pix_freq/1.75); 
+      line_double = 0;
+      pix_shift = 2+DMA_HACK;
+      break;       
+#else
     case VGA_MODE_320x240:
       left_border = backporch_pix/2;
       right_border = frontporch_pix/2;
@@ -343,56 +514,17 @@ vga_error_t VGA_T4::begin(vga_mode_t mode)
       line_double = 0;
       pix_shift = 2+DMA_HACK;
       break;
-    case VGA_MODE_352x240:
-      left_border = 68;
-      fb_width = 352;
-      fb_height = 240 ;
-      fb_stride = fb_width+left_border;
-      maxpixperline = fb_stride;
-      flexio_clock_div = 35;
-      line_double = 1;
-      pix_shift = 2+DMA_HACK;
-      break;
-    case VGA_MODE_352x480:
-      left_border = 60;
-      fb_width = 352;
-      fb_height = 480 ;
-      fb_stride = fb_width+left_border;
-      maxpixperline = fb_stride;
-      flexio_clock_div = 35;
-      line_double = 0;
-      pix_shift = 2+DMA_HACK;
-      break;
-    case VGA_MODE_512x240:
-      left_border = 80;
-      fb_width = 512;
-      fb_height = 240 ;
-      fb_stride = fb_width+left_border;
-      maxpixperline = fb_stride;
-      flexio_clock_div = 24;
-      line_double = 1;
-      pix_shift = 0;
-      break;
-    case VGA_MODE_512x480:
-      left_border = 80;
-      fb_width = 512;
-      fb_height = 480 ;
-      fb_stride = fb_width+left_border;
-      maxpixperline = fb_stride;
-      flexio_clock_div = 24;
-      line_double = 0;
-      pix_shift = 0;
-      break;
+
     case VGA_MODE_640x240:
       left_border = backporch_pix;
       right_border = frontporch_pix;
       fb_width = 640;
       fb_height = 240 ;
       fb_stride = left_border+fb_width+right_border;
-      maxpixperline = fb_stride-92;
-      flexio_clock_div = flexio_freq/pix_freq+6;
+      maxpixperline = fb_stride;
+      flexio_clock_div = flexio_freq/pix_freq;
       line_double = 1;
-      pix_shift = 0;//4+DMA_HACK;
+      pix_shift = 2+DMA_HACK;
       break;
     case VGA_MODE_640x480:
       left_border = backporch_pix;
@@ -400,14 +532,87 @@ vga_error_t VGA_T4::begin(vga_mode_t mode)
       fb_width = 640;
       fb_height = 480 ;
       fb_stride = left_border+fb_width+right_border;
-      maxpixperline = fb_stride-92;
-      flexio_clock_div = flexio_freq/pix_freq+6;
-      Serial.println("frequency");
-      Serial.println(flexio_clock_div);
+      maxpixperline = fb_stride;
+      flexio_clock_div = flexio_freq/pix_freq;
       line_double = 0;
-      pix_shift = 0; //4+DMA_HACK;
+      pix_shift = 2+DMA_HACK;
+      break;     
+
+    case VGA_MODE_544x240:
+      left_border = backporch_pix;
+      right_border = frontporch_pix;
+      fb_width = 544;
+      fb_height = 240 ;
+      fb_stride = left_border+fb_width+right_border;
+      maxpixperline = fb_stride;
+      flexio_clock_div = flexio_freq/(pix_freq/1.1)+4; //1.2???
+      line_double = 1;
+      pix_shift = 0; //2+DMA_HACK;
       break;
+    case VGA_MODE_544x480:
+      left_border = backporch_pix;
+      right_border = frontporch_pix;
+      fb_width = 544;
+      fb_height = 480 ;
+      fb_stride = left_border+fb_width+right_border;
+      maxpixperline = fb_stride;
+      flexio_clock_div = flexio_freq/(pix_freq/1.1)+4; //1.2???
+      line_double = 0;
+      pix_shift = 0; //2+DMA_HACK;
+      break;
+
+   case VGA_MODE_512x240:
+      left_border = backporch_pix/1.3;
+      right_border = frontporch_pix/1.3;
+      fb_width = 512;
+      fb_height = 240 ;
+      fb_stride = left_border+fb_width+right_border;
+      maxpixperline = fb_stride;
+      flexio_clock_div = flexio_freq/(pix_freq/1.3);
+      line_double = 1;
+      pix_shift = 0; //2+DMA_HACK;
+      break;
+    case VGA_MODE_512x480:
+      left_border = backporch_pix/1.3;
+      right_border = frontporch_pix/1.3;
+      fb_width = 512;
+      fb_height = 480 ;
+      fb_stride = left_border+fb_width+right_border;
+      maxpixperline = fb_stride;
+      flexio_clock_div = flexio_freq/(pix_freq/1.3);
+      line_double = 0;
+      pix_shift = 0; //2+DMA_HACK;
+      break;
+
+   case VGA_MODE_352x240:
+      left_border = backporch_pix/1.75;
+      right_border = frontporch_pix/1.75;
+      fb_width = 352;
+      fb_height = 480 ;
+      fb_stride = left_border+fb_width+right_border;
+      maxpixperline = fb_stride;
+      flexio_clock_div = flexio_freq/(pix_freq/1.75);
+      line_double = 1;
+      pix_shift = 2+DMA_HACK;
+      break;
+    case VGA_MODE_352x480:
+      left_border = backporch_pix/1.75;
+      right_border = frontporch_pix/1.75;
+      fb_width = 352;
+      fb_height = 480 ;
+      fb_stride = left_border+fb_width+right_border;
+      maxpixperline = fb_stride;
+      flexio_clock_div = flexio_freq/(pix_freq/1.75);
+      line_double = 0;
+      pix_shift = 2+DMA_HACK;
+      break;
+#endif   
   }	
+
+  Serial.println("frequency");
+  Serial.println(flexio_freq);
+  Serial.println("div");
+  Serial.println(flexio_freq/pix_freq);
 
   pinMode(_vsync_pin, OUTPUT);
   pinMode(PIN_HBLANK, OUTPUT);
@@ -426,8 +631,8 @@ vga_error_t VGA_T4::begin(vga_mode_t mode)
   pinMode(PIN_G_B0, OUTPUT);  // FlexIO2:2 = 0x00004
   pinMode(PIN_G_B1, OUTPUT);  // FlexIO2:3 = 0x00008
 #ifdef BITS12
-  pinMode(PIN_B_B2,  OUTPUT); // FlexIO2:10 = 0x00400
-  pinMode(PIN_B_B3,  OUTPUT); // FlexIO2:11 = 0x00800
+  pinMode(PIN_B_B2, OUTPUT);  // FlexIO2:10 = 0x00400
+  pinMode(PIN_B_B3, OUTPUT);  // FlexIO2:11 = 0x00800
   pinMode(PIN_G_B3, OUTPUT);  // FlexIO2:12 = 0x01000
 #endif
 
@@ -449,16 +654,6 @@ vga_error_t VGA_T4::begin(vga_mode_t mode)
   *(portControlRegister(PIN_G_B3)) = 0xFF;
 #endif
 
-  /* Set video PLL */
-  // There are /1, /2, /4, /8, /16 post dividers for the Video PLL. 
-  // The output frequency can be set by programming the fields in the CCM_ANALOG_PLL_VIDEO, 
-  // and CCM_ANALOG_MISC2 register sets according to the following equation.
-  // PLL output frequency = Fref * (DIV_SELECT + NUM/DENOM)
-
-  CCM_ANALOG_PLL_VIDEO_NUM = 0;
-  CCM_ANALOG_PLL_VIDEO_DENOM = 1;
-  CCM_ANALOG_PLL_VIDEO = 0;
-  CCM_ANALOG_PLL_VIDEO |= (CCM_ANALOG_PLL_VIDEO_POST_DIV_SELECT(2) | CCM_ANALOG_PLL_VIDEO_ENABLE);
 
   /* Set clock for FlexIO1 and FlexIO2 */
   CCM_CCGR5 &= ~CCM_CCGR5_FLEXIO1(CCM_CCGR_ON);
@@ -468,6 +663,7 @@ vga_error_t VGA_T4::begin(vga_mode_t mode)
   CCM_CSCMR2 = (CCM_CSCMR2 & ~(CCM_CSCMR2_FLEXIO2_CLK_SEL(3))) | CCM_CSCMR2_FLEXIO2_CLK_SEL(flexio_clk_sel);
   CCM_CS1CDR = (CCM_CS1CDR & ~(CCM_CS1CDR_FLEXIO2_CLK_PRED(7)|CCM_CS1CDR_FLEXIO2_CLK_PODF(7)) )
     | CCM_CS1CDR_FLEXIO2_CLK_PRED(0) | CCM_CS1CDR_FLEXIO2_CLK_PODF(0);
+
 
  /* Set up pin mux FlexIO1 */
   *(portConfigRegister(PIN_G_B2)) = 0x14;
@@ -506,7 +702,7 @@ vga_error_t VGA_T4::begin(vga_mode_t mode)
   parallelWidth = FLEXIO_SHIFTCFG_PWIDTH(4);  // 8-bit parallel shift width
   pinSelect = FLEXIO_SHIFTCTL_PINSEL(0);      // Select pins FXIO_D0 through FXIO_D3
 #endif
-  inputSource = FLEXIO_SHIFTCFG_INSRC*(1);    // Input source from Shifter 1
+  inputSource = FLEXIO_SHIFTCFG_INSRC*(0);    // Input source from Shifter 1
   stopBit = FLEXIO_SHIFTCFG_SSTOP(0);         // Stop bit disabled
   startBit = FLEXIO_SHIFTCFG_SSTART(0);       // Start bit disabled, transmitter loads data on enable 
   timerSelect = FLEXIO_SHIFTCTL_TIMSEL(0);    // Use timer 0
@@ -517,6 +713,12 @@ vga_error_t VGA_T4::begin(vga_mode_t mode)
   /* Shifter 0 registers for FlexIO1 */
   FLEXIO2_SHIFTCFG0 = parallelWidth | inputSource | stopBit | startBit;
   FLEXIO2_SHIFTCTL0 = timerSelect | timerPolarity | pinConfig | pinSelect | pinPolarity | shifterMode;
+  FLEXIO2_SHIFTCFG1 = parallelWidth | inputSource | stopBit | startBit;
+  FLEXIO2_SHIFTCTL1 = timerSelect | timerPolarity | pinConfig | pinSelect | pinPolarity | shifterMode;
+  FLEXIO2_SHIFTCFG2 = parallelWidth | inputSource | stopBit | startBit;
+  FLEXIO2_SHIFTCTL2 = timerSelect | timerPolarity | pinConfig | pinSelect | pinPolarity | shifterMode;
+  FLEXIO2_SHIFTCFG3 = parallelWidth | inputSource | stopBit | startBit;
+  FLEXIO2_SHIFTCTL3 = timerSelect | timerPolarity | pinConfig | pinSelect | pinPolarity | shifterMode;
 #ifdef BITS12
   parallelWidth = FLEXIO_SHIFTCFG_PWIDTH(5);  // 5-bit parallel shift width
   pinSelect = FLEXIO_SHIFTCTL_PINSEL(4);      // Select pins FXIO_D4 through FXIO_D8
@@ -526,7 +728,14 @@ vga_error_t VGA_T4::begin(vga_mode_t mode)
 #endif  
   FLEXIO1_SHIFTCFG0 = parallelWidth | inputSource | stopBit | startBit;
   FLEXIO1_SHIFTCTL0 = timerSelect | timerPolarity | pinConfig | pinSelect | pinPolarity | shifterMode;
-  
+#ifdef COMBINED_SHIFTREGISTERS  
+  FLEXIO1_SHIFTCFG1 = parallelWidth | inputSource | stopBit | startBit;
+  FLEXIO1_SHIFTCTL1 = timerSelect | timerPolarity | pinConfig | pinSelect | pinPolarity | shifterMode;
+  FLEXIO1_SHIFTCFG2 = parallelWidth | inputSource | stopBit | startBit;
+  FLEXIO1_SHIFTCTL2 = timerSelect | timerPolarity | pinConfig | pinSelect | pinPolarity | shifterMode;
+  FLEXIO1_SHIFTCFG3 = parallelWidth | inputSource | stopBit | startBit;
+  FLEXIO1_SHIFTCTL3 = timerSelect | timerPolarity | pinConfig | pinSelect | pinPolarity | shifterMode;
+#endif  
   /* Timer 0 registers for FlexIO2 */ 
   timerOutput = FLEXIO_TIMCFG_TIMOUT(1);      // Timer output is logic zero when enabled and is not affected by the Timer reset
   timerDecrement = FLEXIO_TIMCFG_TIMDEC(0);   // Timer decrements on FlexIO clock, shift clock equals timer output
@@ -546,6 +755,8 @@ vga_error_t VGA_T4::begin(vga_mode_t mode)
 #ifdef BITS12
   #define SHIFTS_PER_TRANSFER 8 // Shift out 8 times with every transfer = two 32-bit words = contents of Shifter 0 (16bits)
 #else
+#ifdef COMBINED_SHIFTREGISTERS
+#endif  
   #define SHIFTS_PER_TRANSFER 4 // Shift out 4 times with every transfer = two 32-bit words = contents of Shifter 0 
 #endif
   FLEXIO2_TIMCFG0 = timerOutput | timerDecrement | timerReset | timerDisable | timerEnable | stopBit | startBit;
@@ -568,6 +779,90 @@ vga_error_t VGA_T4::begin(vga_mode_t mode)
   /* Set up DMA channel to use Shifter 0 trigger */
   flexio1DMA.triggerAtHardwareEvent(DMAMUX_SOURCE_FLEXIO1_REQUEST0);
   flexio2DMA.triggerAtHardwareEvent(DMAMUX_SOURCE_FLEXIO2_REQUEST0);
+
+#ifdef COMBINED_SHIFTREGISTERS
+  flexio2DMA.TCD->NBYTES = 4;
+  flexio2DMA.TCD->SOFF = 4;
+  flexio2DMA.TCD->SLAST = 0;
+  flexio2DMA.TCD->BITER = 64 / 4;
+  flexio2DMA.TCD->CITER = 64 / 4;
+  flexio2DMA.TCD->DADDR = &FLEXIO2_SHIFTBUF0;
+  flexio2DMA.TCD->DOFF = 0;
+  flexio2DMA.TCD->DLASTSGA = 0;
+  flexio2DMA.TCD->ATTR = DMA_TCD_ATTR_SSIZE(2) | DMA_TCD_ATTR_DSIZE(2); // 32bits
+  flexio2DMA.TCD->CSR |= DMA_TCD_CSR_DREQ;
+
+  flexio1DMA.TCD->NBYTES = 4;
+  flexio1DMA.TCD->SOFF = 4;
+  flexio1DMA.TCD->SLAST = 0;
+  flexio1DMA.TCD->BITER = 64 / 4;;
+  flexio1DMA.TCD->CITER = 64 / 4;;
+  flexio1DMA.TCD->DADDR = &FLEXIO1_SHIFTBUFNBS0;
+  flexio1DMA.TCD->DOFF = 0;
+  flexio1DMA.TCD->DLASTSGA = 0;
+  flexio1DMA.TCD->ATTR = DMA_TCD_ATTR_SSIZE(2) | DMA_TCD_ATTR_DSIZE(2); // 32bits
+  flexio1DMA.TCD->CSR |= DMA_TCD_CSR_DREQ;
+#else 
+  // Setup DMA2 Flexio2 copy
+  flexio2DMA.TCD->NBYTES = 4;
+  flexio2DMA.TCD->SOFF = 4;
+  flexio2DMA.TCD->SLAST = -maxpixperline;
+  flexio2DMA.TCD->BITER = maxpixperline / 4;
+  flexio2DMA.TCD->CITER = maxpixperline / 4;
+  flexio2DMA.TCD->DADDR = &FLEXIO2_SHIFTBUF0;
+  flexio2DMA.TCD->DOFF = 0;
+  flexio2DMA.TCD->DLASTSGA = 0;
+  flexio2DMA.TCD->ATTR = DMA_TCD_ATTR_SSIZE(2) | DMA_TCD_ATTR_DSIZE(2); // 32bits
+  flexio2DMA.TCD->CSR |= DMA_TCD_CSR_DREQ;
+
+  // Setup DMA1 Flexio1 copy
+  // Use pixel shift to avoid color smearing?
+  if (pix_shift & DMA_HACK)
+  {
+    if (pix_shift & 0x3 == 0) {
+      // Aligned 32 bits copy (32bits to 32bits)
+      flexio1DMA.TCD->NBYTES = 4;
+      flexio1DMA.TCD->SOFF = 4;
+      flexio1DMA.TCD->SLAST = -maxpixperline;
+      flexio1DMA.TCD->BITER = maxpixperline / 4;
+      flexio1DMA.TCD->CITER = maxpixperline / 4;
+      flexio1DMA.TCD->DADDR = &FLEXIO1_SHIFTBUFNBS0;
+      flexio1DMA.TCD->DOFF = 0;
+      flexio1DMA.TCD->DLASTSGA = 0;
+      flexio1DMA.TCD->ATTR = DMA_TCD_ATTR_SSIZE(2) | DMA_TCD_ATTR_DSIZE(2); // 32bits to 32bits
+      flexio1DMA.TCD->CSR |= DMA_TCD_CSR_DREQ;
+    }
+    else {
+      // Unaligned (source) 32 bits copy (8bits to 32bits)
+      flexio1DMA.TCD->NBYTES = 4;
+      flexio1DMA.TCD->SOFF = 1;
+      flexio1DMA.TCD->SLAST = -maxpixperline;
+      flexio1DMA.TCD->BITER = maxpixperline / 4;
+      flexio1DMA.TCD->CITER = maxpixperline / 4;
+      flexio1DMA.TCD->DADDR = &FLEXIO1_SHIFTBUFNBS0;
+      flexio1DMA.TCD->DOFF = 0;
+      flexio1DMA.TCD->DLASTSGA = 0;
+      flexio1DMA.TCD->ATTR = DMA_TCD_ATTR_SSIZE(0) | DMA_TCD_ATTR_DSIZE(2); // 8bits to 32bits
+      flexio1DMA.TCD->CSR |= DMA_TCD_CSR_DREQ; // disable on completion
+    }	
+  }
+  else 
+  {
+      // Aligned 32 bits copy
+      flexio1DMA.TCD->NBYTES = 4;
+      flexio1DMA.TCD->SOFF = 4;
+      flexio1DMA.TCD->SLAST = -maxpixperline;
+      flexio1DMA.TCD->BITER = maxpixperline / 4;
+      flexio1DMA.TCD->CITER = maxpixperline / 4;
+      flexio1DMA.TCD->DADDR = &FLEXIO1_SHIFTBUFNBS0;
+      flexio1DMA.TCD->DOFF = 0;
+      flexio1DMA.TCD->DLASTSGA = 0;
+      flexio1DMA.TCD->ATTR = DMA_TCD_ATTR_SSIZE(2) | DMA_TCD_ATTR_DSIZE(2); // 32bits
+      flexio1DMA.TCD->CSR |= DMA_TCD_CSR_DREQ;
+  } 
+#endif
+
+
 #ifdef DEBUG
   Serial.println("DMA setup complete");
 #endif
@@ -583,19 +878,14 @@ vga_error_t VGA_T4::begin(vga_mode_t mode)
   CCM_CCGR6 |= 0xC0000000;              //enable clocks to CG15 of CGR6 for QT3
   //configure QTIMER3 Timer3 for test of alternating Compare1 and Compare2
   
-  #define MARGIN_N 1008 //5
+  #define MARGIN_N 1005 //8
   #define MARGIN_D 1000
 
   TMR3_CTRL3 = 0b0000000000100000;      //stop all functions of timer 
-//  TMR3_SCTRL3 = 0b0000000000000001;     //0(TimerCompareFlag),0(TimerCompareIntEnable),00(TimerOverflow)0000(NoCapture),0000(Capture Disabled),00, 0,1(OFLAG to Ext Pin)
   // Invert output pin as we want the interupt on rising edge
   TMR3_SCTRL3 = 0b0000000000000011;     //0(TimerCompareFlag),0(TimerCompareIntEnable),00(TimerOverflow)0000(NoCapture),0000(Capture Disabled),00, 1(INV output),1(OFLAG to Ext Pin)
   TMR3_CNTR3 = 0;
   TMR3_LOAD3 = 0;
-//  TMR3_COMP13 = ((569*MARGIN_N)/MARGIN_D)-1;
-//  TMR3_CMPLD13 = ((569*MARGIN_N)/MARGIN_D)-1;
-//  TMR3_COMP23 = ((4174*MARGIN_N)/MARGIN_D)-1;
-//  TMR3_CMPLD23 = ((4174*MARGIN_N)/MARGIN_D)-1;
   /* Inverted timings */
   TMR3_COMP13 = ((4174*MARGIN_N)/MARGIN_D)-1;
   TMR3_CMPLD13 = ((4174*MARGIN_N)/MARGIN_D)-1;
