@@ -36,6 +36,7 @@
 
 
 #define USE_VIDEO_PLL 1
+//#define COMBINED_SHIFTREGISTERS 1
 
 #define TOP_BORDER    40
 #define PIN_HBLANK    15
@@ -207,6 +208,8 @@ FASTRUN void VGA_T4::QT3_isr(void) {
     // Disable DMAs
     DMA_CERQ = flexio2DMA.channel;
     DMA_CERQ = flexio1DMA.channel; 
+
+
     // Setup source adress
     // Aligned 32 bits copy
 #ifdef USE_VIDEO_PLL 
@@ -226,6 +229,54 @@ FASTRUN void VGA_T4::QT3_isr(void) {
       p=(uint32_t *)&gfxbuffer[fb_stride*y+(pix_shift&0xf)];
       flexio1DMA.TCD->SADDR = p;
     }
+
+
+#ifdef COMBINED_SHIFTREGISTERS
+  unsigned int minorLoopBytes, minorLoopIterations, majorLoopBytes, majorLoopIterations;
+  int destinationAddressOffset, destinationAddressLastOffset, sourceAddressOffset, sourceAddressLastOffset, minorLoopOffset;
+  volatile uint32_t *destinationAddress, *sourceAddress;
+
+    DMA_CR |= DMA_CR_EMLM; // Enable minor loop mapping so that we can have a minor loop offset
+    minorLoopIterations = 4; // transfer 4 words with each DMA trigger into 4 FlexIO buffers
+    minorLoopBytes = minorLoopIterations * sizeof(uint32_t);
+  #define BYTES_PER_PIXEL 1
+    majorLoopBytes = maxpixperline * BYTES_PER_PIXEL; // This must be evenly divisible by 16
+    majorLoopIterations = majorLoopBytes / minorLoopBytes;
+
+    sourceAddressOffset = sizeof(uint32_t);
+    sourceAddressLastOffset = - majorLoopBytes; // at completion of major loop, reset source address
+    destinationAddress = &FLEXIO2_SHIFTBUF0;
+    destinationAddressOffset = sizeof(uint32_t);
+    minorLoopOffset = -minorLoopIterations * destinationAddressOffset; // reset destination address at end of each minor loop...
+    destinationAddressLastOffset = minorLoopOffset; // ...and at end of major loop
+    
+    flexio2DMA.TCD->SOFF = sourceAddressOffset;
+    flexio2DMA.TCD->SLAST = sourceAddressLastOffset;
+    flexio2DMA.TCD->ATTR_SRC = DMA_TCD_ATTR_SIZE_32BIT;
+    flexio2DMA.TCD->DADDR = destinationAddress;
+    flexio2DMA.TCD->DOFF = destinationAddressOffset;
+    flexio2DMA.TCD->ATTR_DST = DMA_TCD_ATTR_SIZE_32BIT;
+    flexio2DMA.TCD->DLASTSGA = destinationAddressLastOffset;
+    flexio2DMA.TCD->NBYTES_MLOFFYES = DMA_TCD_NBYTES_DMLOE | DMA_TCD_NBYTES_MLOFFYES_MLOFF(minorLoopOffset) | DMA_TCD_NBYTES_MLOFFYES_NBYTES(minorLoopBytes);
+    flexio2DMA.TCD->BITER = majorLoopIterations;
+    flexio2DMA.TCD->CITER = majorLoopIterations;
+    flexio2DMA.disableOnCompletion(); // disable on completion or else it will be triggered by FlexIO continuously
+
+    destinationAddress = &FLEXIO1_SHIFTBUFNBS0;
+    flexio1DMA.TCD->SOFF = sourceAddressOffset;
+    flexio1DMA.TCD->SLAST = sourceAddressLastOffset;
+    flexio1DMA.TCD->ATTR_SRC = DMA_TCD_ATTR_SIZE_32BIT;
+    flexio1DMA.TCD->DADDR = destinationAddress;
+    flexio1DMA.TCD->DOFF = destinationAddressOffset;
+    flexio1DMA.TCD->ATTR_DST = DMA_TCD_ATTR_SIZE_32BIT;
+    flexio1DMA.TCD->DLASTSGA = destinationAddressLastOffset;
+    flexio1DMA.TCD->NBYTES_MLOFFYES = DMA_TCD_NBYTES_DMLOE | DMA_TCD_NBYTES_MLOFFYES_MLOFF(minorLoopOffset) | DMA_TCD_NBYTES_MLOFFYES_NBYTES(minorLoopBytes);
+    flexio1DMA.TCD->BITER = majorLoopIterations;
+    flexio1DMA.TCD->CITER = majorLoopIterations;
+    flexio1DMA.disableOnCompletion(); // disable on completion or else it will be triggered by FlexIO continuously
+#endif
+
+
     // Enable DMAs
     DMA_SERQ = flexio2DMA.channel; 
     if (fb_width <= 544)
@@ -264,7 +315,7 @@ VGA_T4::VGA_T4(int vsync_pin = DEFAULT_VSYNC_PIN)
 // pix_period = 39.7ns
 // H-PULSE is 3.8133us = 3813.3ns => 96 pixels (see above for the rest)
 #define frontporch_pix  16
-#define backporch_pix   48 //16 //48
+#define backporch_pix   48 //16
 
 // Flexio Clock
 // PLL3 SW CLOCK    (3) => 480 MHz
@@ -308,22 +359,22 @@ vga_error_t VGA_T4::begin(vga_mode_t mode)
 {
   uint32_t flexio_clock_div;
 
+#ifdef USE_VIDEO_PLL
+  int div_select = 49;
+  int num = 135;
+  int denom = 100;  
+  int flexio_clk_sel = FLEXIO_CLK_SEL_PLL5;   
+  int flexio_freq = ( 24000*div_select + (num*24000)/denom )/POST_DIV_SELECT;
+  set_videoClock(div_select,num,denom,true);     
+#else
   // Default PLL3
   int flexio_clk_sel = FLEXIO_CLK_SEL_PLL3;
   int flexio_freq = 480000;
-  int div_select;
-  int num ;
-  int denom;  
+#endif  
   switch(mode) {
 
 #ifdef USE_VIDEO_PLL
     case VGA_MODE_320x240:
-      flexio_clk_sel = FLEXIO_CLK_SEL_PLL5;   
-      div_select = 49;
-      num = 135;
-      denom = 100;
-      flexio_freq = ( 24000*div_select + (num*24000)/denom )/POST_DIV_SELECT;
-      set_videoClock(div_select,num,denom,true);     
       left_border = backporch_pix/2;
       right_border = frontporch_pix/2;
       fb_width = 320;
@@ -335,12 +386,6 @@ vga_error_t VGA_T4::begin(vga_mode_t mode)
       pix_shift = 2+DMA_HACK;
       break;
     case VGA_MODE_320x480:
-      flexio_clk_sel = FLEXIO_CLK_SEL_PLL5;   
-      div_select = 49;
-      num = 135;
-      denom = 100;
-      flexio_freq = ( 24000*div_select + (num*24000)/denom )/POST_DIV_SELECT;
-      set_videoClock(div_select,num,denom,true);     
       left_border = backporch_pix/2;
       right_border = frontporch_pix/2;
       fb_width = 320;
@@ -353,12 +398,6 @@ vga_error_t VGA_T4::begin(vga_mode_t mode)
       break;   
 
     case VGA_MODE_640x240:
-      flexio_clk_sel = FLEXIO_CLK_SEL_PLL5;   
-      div_select = 49;
-      num = 135;
-      denom = 100;
-      flexio_freq = ( 24000*div_select + (num*24000)/denom )/POST_DIV_SELECT;
-      set_videoClock(div_select,num,denom,true);     
       left_border = backporch_pix;
       right_border = frontporch_pix;
       fb_width = 640;
@@ -370,12 +409,6 @@ vga_error_t VGA_T4::begin(vga_mode_t mode)
       pix_shift = 0; //1+DMA_HACK;
       break;
     case VGA_MODE_640x480:
-      flexio_clk_sel = FLEXIO_CLK_SEL_PLL5;   
-      div_select = 49;
-      num = 135;
-      denom = 100;
-      flexio_freq = ( 24000*div_select + (num*24000)/denom )/POST_DIV_SELECT;
-      set_videoClock(div_select,num,denom,true);     
       left_border = backporch_pix;
       right_border = frontporch_pix;
       fb_width = 640;
@@ -388,12 +421,6 @@ vga_error_t VGA_T4::begin(vga_mode_t mode)
       break;   
 
     case VGA_MODE_544x240:
-      flexio_clk_sel = FLEXIO_CLK_SEL_PLL5;   
-      div_select = 49;
-      num = 135;
-      denom = 100;
-      flexio_freq = ( 24000*div_select + (num*24000)/denom )/POST_DIV_SELECT;
-      set_videoClock(div_select,num,denom,true);     
       left_border = backporch_pix;
       right_border = frontporch_pix;
       fb_width = 544;
@@ -405,12 +432,6 @@ vga_error_t VGA_T4::begin(vga_mode_t mode)
       pix_shift = 0;//+DMA_HACK;
       break;
     case VGA_MODE_544x480:
-      flexio_clk_sel = FLEXIO_CLK_SEL_PLL5;   
-      div_select = 49;
-      num = 135;
-      denom = 100;
-      flexio_freq = ( 24000*div_select + (num*24000)/denom )/POST_DIV_SELECT;
-      set_videoClock(div_select,num,denom,true);     
       left_border = backporch_pix;
       right_border = frontporch_pix;
       fb_width = 544;
@@ -423,12 +444,6 @@ vga_error_t VGA_T4::begin(vga_mode_t mode)
       break;   
 
     case VGA_MODE_512x240:
-      flexio_clk_sel = FLEXIO_CLK_SEL_PLL5;   
-      div_select = 49;
-      num = 135;
-      denom = 100;
-      flexio_freq = ( 24000*div_select + (num*24000)/denom )/POST_DIV_SELECT;
-      set_videoClock(div_select,num,denom,true);     
       left_border = backporch_pix/1.3;
       right_border = frontporch_pix/1.3;
       fb_width = 512;
@@ -440,12 +455,6 @@ vga_error_t VGA_T4::begin(vga_mode_t mode)
       pix_shift = 0;//+DMA_HACK;
       break;
     case VGA_MODE_512x480:
-      flexio_clk_sel = FLEXIO_CLK_SEL_PLL5;   
-      div_select = 49;
-      num = 135;
-      denom = 100;
-      flexio_freq = ( 24000*div_select + (num*24000)/denom )/POST_DIV_SELECT;
-      set_videoClock(div_select,num,denom,true);     
       left_border = backporch_pix/1.3;
       right_border = frontporch_pix/1.3;
       fb_width = 512;
@@ -458,12 +467,6 @@ vga_error_t VGA_T4::begin(vga_mode_t mode)
       break; 
 
     case VGA_MODE_352x240:
-      flexio_clk_sel = FLEXIO_CLK_SEL_PLL5;   
-      div_select = 49;
-      num = 135;
-      denom = 100;
-      flexio_freq = ( 24000*div_select + (num*24000)/denom )/POST_DIV_SELECT;
-      set_videoClock(div_select,num,denom,true);     
       left_border = backporch_pix/1.75;
       right_border = frontporch_pix/1.75;
       fb_width = 352;
@@ -475,12 +478,6 @@ vga_error_t VGA_T4::begin(vga_mode_t mode)
       pix_shift = 2+DMA_HACK;
       break;
     case VGA_MODE_352x480:
-      flexio_clk_sel = FLEXIO_CLK_SEL_PLL5;   
-      div_select = 49;
-      num = 135;
-      denom = 100;
-      flexio_freq = ( 24000*div_select + (num*24000)/denom )/POST_DIV_SELECT;
-      set_videoClock(div_select,num,denom,true);     
       left_border = backporch_pix/1.75;
       right_border = frontporch_pix/1.75;
       fb_width = 352;
@@ -702,7 +699,7 @@ vga_error_t VGA_T4::begin(vga_mode_t mode)
   parallelWidth = FLEXIO_SHIFTCFG_PWIDTH(4);  // 8-bit parallel shift width
   pinSelect = FLEXIO_SHIFTCTL_PINSEL(0);      // Select pins FXIO_D0 through FXIO_D3
 #endif
-  inputSource = FLEXIO_SHIFTCFG_INSRC*(0);    // Input source from Shifter 1
+  inputSource = FLEXIO_SHIFTCFG_INSRC*(1);    // Input source from next shifter
   stopBit = FLEXIO_SHIFTCFG_SSTOP(0);         // Stop bit disabled
   startBit = FLEXIO_SHIFTCFG_SSTART(0);       // Start bit disabled, transmitter loads data on enable 
   timerSelect = FLEXIO_SHIFTCTL_TIMSEL(0);    // Use timer 0
@@ -713,12 +710,8 @@ vga_error_t VGA_T4::begin(vga_mode_t mode)
   /* Shifter 0 registers for FlexIO1 */
   FLEXIO2_SHIFTCFG0 = parallelWidth | inputSource | stopBit | startBit;
   FLEXIO2_SHIFTCTL0 = timerSelect | timerPolarity | pinConfig | pinSelect | pinPolarity | shifterMode;
-  FLEXIO2_SHIFTCFG1 = parallelWidth | inputSource | stopBit | startBit;
-  FLEXIO2_SHIFTCTL1 = timerSelect | timerPolarity | pinConfig | pinSelect | pinPolarity | shifterMode;
-  FLEXIO2_SHIFTCFG2 = parallelWidth | inputSource | stopBit | startBit;
-  FLEXIO2_SHIFTCTL2 = timerSelect | timerPolarity | pinConfig | pinSelect | pinPolarity | shifterMode;
-  FLEXIO2_SHIFTCFG3 = parallelWidth | inputSource | stopBit | startBit;
-  FLEXIO2_SHIFTCTL3 = timerSelect | timerPolarity | pinConfig | pinSelect | pinPolarity | shifterMode;
+
+  /* Shifter 0 registers for FlexIO1 */ 
 #ifdef BITS12
   parallelWidth = FLEXIO_SHIFTCFG_PWIDTH(5);  // 5-bit parallel shift width
   pinSelect = FLEXIO_SHIFTCTL_PINSEL(4);      // Select pins FXIO_D4 through FXIO_D8
@@ -728,14 +721,24 @@ vga_error_t VGA_T4::begin(vga_mode_t mode)
 #endif  
   FLEXIO1_SHIFTCFG0 = parallelWidth | inputSource | stopBit | startBit;
   FLEXIO1_SHIFTCTL0 = timerSelect | timerPolarity | pinConfig | pinSelect | pinPolarity | shifterMode;
-#ifdef COMBINED_SHIFTREGISTERS  
+  
+#ifdef COMBINED_SHIFTREGISTERS
+  pinConfig = FLEXIO_SHIFTCTL_PINCFG(0);      // Shifter pin output disabled
+  FLEXIO2_SHIFTCFG1 = parallelWidth | inputSource | stopBit | startBit;
+  FLEXIO2_SHIFTCTL1 = timerSelect | timerPolarity | pinConfig | shifterMode;
+  FLEXIO2_SHIFTCFG2 = parallelWidth | inputSource | stopBit | startBit;
+  FLEXIO2_SHIFTCTL2 = timerSelect | timerPolarity | pinConfig | shifterMode;
+  FLEXIO2_SHIFTCFG3 = parallelWidth | inputSource | stopBit | startBit;
+  FLEXIO2_SHIFTCTL3 = timerSelect | timerPolarity | pinConfig | shifterMode;
+
   FLEXIO1_SHIFTCFG1 = parallelWidth | inputSource | stopBit | startBit;
-  FLEXIO1_SHIFTCTL1 = timerSelect | timerPolarity | pinConfig | pinSelect | pinPolarity | shifterMode;
+  FLEXIO1_SHIFTCTL1 = timerSelect | timerPolarity | pinConfig | shifterMode;
   FLEXIO1_SHIFTCFG2 = parallelWidth | inputSource | stopBit | startBit;
-  FLEXIO1_SHIFTCTL2 = timerSelect | timerPolarity | pinConfig | pinSelect | pinPolarity | shifterMode;
+  FLEXIO1_SHIFTCTL2 = timerSelect | timerPolarity | pinConfig | shifterMode;
   FLEXIO1_SHIFTCFG3 = parallelWidth | inputSource | stopBit | startBit;
-  FLEXIO1_SHIFTCTL3 = timerSelect | timerPolarity | pinConfig | pinSelect | pinPolarity | shifterMode;
+  FLEXIO1_SHIFTCTL3 = timerSelect | timerPolarity | pinConfig | shifterMode;
 #endif  
+
   /* Timer 0 registers for FlexIO2 */ 
   timerOutput = FLEXIO_TIMCFG_TIMOUT(1);      // Timer output is logic zero when enabled and is not affected by the Timer reset
   timerDecrement = FLEXIO_TIMCFG_TIMDEC(0);   // Timer decrements on FlexIO clock, shift clock equals timer output
@@ -744,35 +747,45 @@ vga_error_t VGA_T4::begin(vga_mode_t mode)
   timerEnable = FLEXIO_TIMCFG_TIMENA(2);      // Timer enabled on Trigger assert
   stopBit = FLEXIO_TIMCFG_TSTOP(0);           // Stop bit disabled
   startBit = FLEXIO_TIMCFG_TSTART*(0);        // Start bit disabled
+#ifdef COMBINED_SHIFTREGISTERS
+  triggerSelect = FLEXIO_TIMCTL_TRGSEL(1+4*(3)); // Trigger select Shifter 3 status flag
+#else
   triggerSelect = FLEXIO_TIMCTL_TRGSEL(1+4*(0)); // Trigger select Shifter 0 status flag
+#endif  
   triggerPolarity = FLEXIO_TIMCTL_TRGPOL*(1); // Trigger active low
   triggerSource = FLEXIO_TIMCTL_TRGSRC*(1);   // Internal trigger selected
-  pinConfig = FLEXIO_TIMCTL_PINCFG(0);        // Timer pin output //3??
-  pinSelect = FLEXIO_TIMCTL_PINSEL(0);        // Select pin FXIO_D0
-  pinPolarity = FLEXIO_TIMCTL_PINPOL*(0);     // Timer pin polarity active high
+  pinConfig = FLEXIO_TIMCTL_PINCFG(0);        // Timer pin output disabled
+  //pinSelect = FLEXIO_TIMCTL_PINSEL(0);        // Select pin FXIO_D0
+  //pinPolarity = FLEXIO_TIMCTL_PINPOL*(0);     // Timer pin polarity active high
   timerMode = FLEXIO_TIMCTL_TIMOD(1);         // Dual 8-bit counters baud mode
   // flexio_clock_div : Output clock frequency is N times slower than FlexIO clock (41.7 ns period) (23.980MHz?)
 #ifdef BITS12
-  #define SHIFTS_PER_TRANSFER 8 // Shift out 8 times with every transfer = two 32-bit words = contents of Shifter 0 (16bits)
+  #define SHIFTS_PER_TRANSFER 8
 #else
 #ifdef COMBINED_SHIFTREGISTERS
+  #define SHIFTS_PER_TRANSFER 16 // Shift out 8 times with every transfer = two 32-bit words = contents of Shifter 0&1 
 #endif  
-  #define SHIFTS_PER_TRANSFER 4 // Shift out 4 times with every transfer = two 32-bit words = contents of Shifter 0 
+  #define SHIFTS_PER_TRANSFER 4 // Shift out 4 times with every transfer = 32-bit word = contents of Shifter 0 
 #endif
   FLEXIO2_TIMCFG0 = timerOutput | timerDecrement | timerReset | timerDisable | timerEnable | stopBit | startBit;
-  FLEXIO2_TIMCTL0 = triggerSelect | triggerPolarity | triggerSource | pinConfig | pinSelect | pinPolarity | timerMode;
+  FLEXIO2_TIMCTL0 = triggerSelect | triggerPolarity | triggerSource | pinConfig /*| pinSelect | pinPolarity*/ | timerMode;
   FLEXIO2_TIMCMP0 = ((SHIFTS_PER_TRANSFER*2-1)<<8) | ((flexio_clock_div/2-1)<<0);
   /* Timer 0 registers for FlexIO1 */
   FLEXIO1_TIMCFG0 = timerOutput | timerDecrement | timerReset | timerDisable | timerEnable | stopBit | startBit;
-  FLEXIO1_TIMCTL0 = triggerSelect | triggerPolarity | triggerSource | pinConfig | pinSelect | pinPolarity | timerMode;
+  FLEXIO1_TIMCTL0 = triggerSelect | triggerPolarity | triggerSource | pinConfig /*| pinSelect | pinPolarity*/ | timerMode;
   FLEXIO1_TIMCMP0 = ((SHIFTS_PER_TRANSFER*2-1)<<8) | ((flexio_clock_div/2-1)<<0);
 #ifdef DEBUG
   Serial.println("FlexIO setup complete");
 #endif
 
-  /* Enable DMA trigger on Shifter0, DMA request is generated when data is transferred from buffer0 to shifter0 */
-  FLEXIO2_SHIFTSDEN |= (1<<0);
+  /* Enable DMA trigger on Shifter0, DMA request is generated when data is transferred from buffer0 to shifter0 */ 
+#ifdef COMBINED_SHIFTREGISTERS 
+  FLEXIO2_SHIFTSDEN |= (1<<3); 
+  FLEXIO1_SHIFTSDEN |= (1<<3);
+#else 
+  FLEXIO2_SHIFTSDEN |= (1<<0); 
   FLEXIO1_SHIFTSDEN |= (1<<0);
+#endif  
   /* Disable DMA channel so it doesn't start transferring yet */
   flexio1DMA.disable();
   flexio2DMA.disable();
@@ -780,28 +793,8 @@ vga_error_t VGA_T4::begin(vga_mode_t mode)
   flexio1DMA.triggerAtHardwareEvent(DMAMUX_SOURCE_FLEXIO1_REQUEST0);
   flexio2DMA.triggerAtHardwareEvent(DMAMUX_SOURCE_FLEXIO2_REQUEST0);
 
-#ifdef COMBINED_SHIFTREGISTERS
-  flexio2DMA.TCD->NBYTES = 4;
-  flexio2DMA.TCD->SOFF = 4;
-  flexio2DMA.TCD->SLAST = 0;
-  flexio2DMA.TCD->BITER = 64 / 4;
-  flexio2DMA.TCD->CITER = 64 / 4;
-  flexio2DMA.TCD->DADDR = &FLEXIO2_SHIFTBUF0;
-  flexio2DMA.TCD->DOFF = 0;
-  flexio2DMA.TCD->DLASTSGA = 0;
-  flexio2DMA.TCD->ATTR = DMA_TCD_ATTR_SSIZE(2) | DMA_TCD_ATTR_DSIZE(2); // 32bits
-  flexio2DMA.TCD->CSR |= DMA_TCD_CSR_DREQ;
 
-  flexio1DMA.TCD->NBYTES = 4;
-  flexio1DMA.TCD->SOFF = 4;
-  flexio1DMA.TCD->SLAST = 0;
-  flexio1DMA.TCD->BITER = 64 / 4;;
-  flexio1DMA.TCD->CITER = 64 / 4;;
-  flexio1DMA.TCD->DADDR = &FLEXIO1_SHIFTBUFNBS0;
-  flexio1DMA.TCD->DOFF = 0;
-  flexio1DMA.TCD->DLASTSGA = 0;
-  flexio1DMA.TCD->ATTR = DMA_TCD_ATTR_SSIZE(2) | DMA_TCD_ATTR_DSIZE(2); // 32bits
-  flexio1DMA.TCD->CSR |= DMA_TCD_CSR_DREQ;
+#ifdef COMBINED_SHIFTREGISTERS 
 #else 
   // Setup DMA2 Flexio2 copy
   flexio2DMA.TCD->NBYTES = 4;
