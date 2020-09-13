@@ -36,7 +36,6 @@
 
 
 #define USE_VIDEO_PLL 1
-//#define COMBINED_SHIFTREGISTERS 1
 
 #define TOP_BORDER    40
 #define PIN_HBLANK    15
@@ -60,89 +59,6 @@
 
 #define DMA_HACK      0x80
 
-#define ABS(X)  ((X) > 0 ? (X) : -(X))
-
-// Precomputed sinus and cosinus table from 0 to 359 degrees
-// The tables are in Degrees not in Radian !
-const float calcsi[360]={
-		0.000001 ,                                                                                                                            //  0
-		0.01745239 , 0.03489947 , 0.05233591 , 0.06975641 , 0.08715567 , 0.1045284 , 0.1218692 , 0.139173 , 0.1564343 , 0.173648 ,            // 1 à  10
-		0.1908088 , 0.2079115 , 0.2249509 , 0.2419217 , 0.2588188 , 0.2756371 , 0.2923715 , 0.3090167 , 0.3255679 , 0.3420198 ,               // 11 à  20
-		0.3583677 , 0.3746063 , 0.3907308 , 0.4067363 , 0.4226179 , 0.4383708 , 0.4539901 , 0.4694712 , 0.4848093 , 0.4999996 ,               // 21 à  30
-		0.5150377 , 0.5299189 , 0.5446386 , 0.5591925 , 0.573576 , 0.5877848 , 0.6018146 , 0.615661 , 0.62932 , 0.6427872 ,                   // 31 à  40
-		0.6560586 , 0.6691301 , 0.6819978 , 0.6946579 , 0.7071063 , 0.7193394 , 0.7313532 , 0.7431444 , 0.7547091 , 0.7660439 ,               // 41 à  50
-		0.7771455 , 0.7880103 , 0.798635 , 0.8090165 , 0.8191515 , 0.8290371 , 0.8386701 , 0.8480476 , 0.8571668 , 0.8660249 ,                // 51 à  60
-		0.8746193 , 0.8829472 , 0.8910061 , 0.8987936 , 0.9063074 , 0.913545 , 0.9205045 , 0.9271835 , 0.9335801 , 0.9396922 ,                // 61 à  70
-		0.9455183 , 0.9510562 , 0.9563044 , 0.9612614 , 0.9659255 , 0.9702954 , 0.9743698 , 0.9781474 , 0.981627 , 0.9848075 ,                // 71 à  80
-		0.9876881 , 0.9902679 , 0.992546 , 0.9945218 , 0.9961946 , 0.9975639 , 0.9986295 , 0.9993908 , 0.9998476 , 0.99999 ,                  // 81 à  90
-		0.9998477 , 0.9993909 , 0.9986296 , 0.9975642 , 0.9961948 , 0.994522 , 0.9925463 , 0.9902682 , 0.9876886 , 0.984808 ,                 // 91 à  100
-		0.9816275 , 0.9781479 , 0.9743704 , 0.9702961 , 0.9659262 , 0.9612621 , 0.9563052 , 0.9510571 , 0.9455191 , 0.9396932 ,               // 101 à  110
-		0.933581 , 0.9271844 , 0.9205055 , 0.9135461 , 0.9063086 , 0.8987948 , 0.8910073 , 0.8829485 , 0.8746206 , 0.8660263 ,                // 111 à  120
-		0.8571682 , 0.8480491 , 0.8386716 , 0.8290385 , 0.8191531 , 0.8090182 , 0.7986366 , 0.7880119 , 0.7771472 , 0.7660457 ,               // 121 à  130
-		0.7547108 , 0.7431462 , 0.7313551 , 0.7193412 , 0.7071083 , 0.6946598 , 0.6819999 , 0.6691321 , 0.6560606 , 0.6427892 ,               // 131 à  140
-		0.629322 , 0.6156631 , 0.6018168 , 0.5877869 , 0.5735782 , 0.5591948 , 0.5446408 , 0.5299212 , 0.5150401 , 0.5000019 ,                // 141 à  150
-		0.4848116 , 0.4694737 , 0.4539925 , 0.4383733 , 0.4226205 , 0.4067387 , 0.3907333 , 0.3746087 , 0.3583702 , 0.3420225 ,               // 151 à  160
-		0.3255703 , 0.3090193 , 0.2923741 , 0.2756396 , 0.2588214 , 0.2419244 , 0.2249534 , 0.2079142 , 0.1908116 , 0.1736506 ,               // 161 à  170
-		0.156437 , 0.1391758 , 0.1218719 , 0.1045311 , 0.08715825 , 0.06975908 , 0.05233867 , 0.03490207 , 0.01745508 , 0.0277 ,              // 171 à  180
-		-0.01744977 , -0.03489676 , -0.05233313 , -0.06975379 , -0.08715296 , -0.1045256 , -0.1218666 , -0.1391703 , -0.1564316 , -0.1736454 ,// 181 à  190
-		-0.1908061 , -0.207909 , -0.2249483 , -0.241919 , -0.2588163 , -0.2756345 , -0.2923688 , -0.3090142 , -0.3255653 , -0.3420173 ,       // 191 à  200
-		-0.3583652 , -0.3746038 , -0.3907282 , -0.4067339 , -0.4226155 , -0.4383683 , -0.4539878 , -0.4694688 , -0.4848068 , -0.4999973 ,     // 201 à  210
-		-0.5150353 , -0.5299166 , -0.5446364 , -0.5591902 , -0.5735739 , -0.5877826 , -0.6018124 , -0.615659 , -0.6293178 , -0.642785 ,       // 211 à  220
-		-0.6560566 , -0.6691281 , -0.6819958 , -0.694656 , -0.7071043 , -0.7193374 , -0.7313514 , -0.7431425 , -0.7547074 , -0.7660421 ,      // 221 à  230
-		-0.7771439 , -0.7880087 , -0.7986334 , -0.8090149 , -0.8191499 , -0.8290355 , -0.8386687 , -0.8480463 , -0.8571655 , -0.8660236 ,     // 231 à  240
-		-0.8746178 , -0.882946 , -0.8910049 , -0.8987925 , -0.9063062 , -0.9135439 , -0.9205033 , -0.9271825 , -0.9335791 , -0.9396913 ,      // 241 à  250
-		-0.9455173 , -0.9510553 , -0.9563036 , -0.9612607 , -0.9659248 , -0.9702948 , -0.9743692 , -0.9781467 , -0.9816265 , -0.9848071 ,     // 251 à  260
-		-0.9876878 , -0.9902675 , -0.9925456 , -0.9945215 , -0.9961944 , -0.9975638 , -0.9986293 , -0.9993907 , -0.9998476 , -0.99999 ,       // 261 à  270
-		-0.9998478 , -0.9993909 , -0.9986298 , -0.9975643 , -0.9961951 , -0.9945223 , -0.9925466 , -0.9902686 , -0.987689 , -0.9848085 ,      // 271 à  280
-		-0.981628 , -0.9781484 , -0.974371 , -0.9702968 , -0.965927 , -0.9612629 , -0.9563061 , -0.9510578 , -0.9455199 , -0.9396941 ,        // 281 à  290
-		-0.933582 , -0.9271856 , -0.9205065 , -0.9135472 , -0.9063097 , -0.898796 , -0.8910086 , -0.8829498 , -0.8746218 , -0.8660276 ,       // 291 à  300
-		-0.8571696 , -0.8480505 , -0.8386731 , -0.8290402 , -0.8191546 , -0.8090196 , -0.7986383 , -0.7880136 , -0.777149 , -0.7660476 ,      // 301 à  310
-		-0.7547125 , -0.7431479 , -0.7313569 , -0.7193431 , -0.7071103 , -0.6946616 , -0.6820017 , -0.6691341 , -0.6560627 , -0.6427914 ,     // 311 à  320
-		-0.6293243 , -0.6156651 , -0.6018188 , -0.5877892 , -0.5735805 , -0.5591971 , -0.5446434 , -0.5299233 , -0.5150422 , -0.5000043 ,     // 321 à  330
-		-0.484814 , -0.4694761 , -0.4539948 , -0.4383755 , -0.4226228 , -0.4067413 , -0.3907359 , -0.3746115 , -0.3583725 , -0.3420248 ,      // 331 à  340
-		-0.325573 , -0.3090219 , -0.2923768 , -0.2756425 , -0.2588239 , -0.2419269 , -0.2249561 , -0.2079169 , -0.1908143 , -0.1736531 ,      // 341 à  350
-		-0.1564395 , -0.1391783 , -0.1218746 , -0.1045339 , -0.08716125 , -0.06976161 , -0.0523412 , -0.03490484 , -0.01745785 };             // 351 à  359
-
-const float calcco[360]={
-		0.99999 ,                                                                                                                            //  0
-		0.9998477 , 0.9993908 , 0.9986295 , 0.9975641 , 0.9961947 , 0.9945219 , 0.9925462 , 0.9902681 , 0.9876884 , 0.9848078 ,              // 1 à  10
-		0.9816272 , 0.9781477 , 0.9743701 , 0.9702958 , 0.9659259 , 0.9612617 , 0.9563049 , 0.9510566 , 0.9455186 , 0.9396928 ,              // 11 à  20
-		0.9335806 , 0.927184 , 0.920505 , 0.9135456 , 0.906308 , 0.8987943 , 0.8910067 , 0.8829478 , 0.8746199 , 0.8660256 ,                 // 21 à  30
-		0.8571675 , 0.8480483 , 0.8386709 , 0.8290379 , 0.8191524 , 0.8090173 , 0.7986359 , 0.7880111 , 0.7771463 , 0.7660448 ,              // 31 à  40
-		0.75471 , 0.7431452 , 0.7313541 , 0.7193403 , 0.7071072 , 0.6946589 , 0.6819989 , 0.6691311 , 0.6560596 , 0.6427882 ,                // 41 à  50
-		0.629321 , 0.6156621 , 0.6018156 , 0.5877859 , 0.5735771 , 0.5591936 , 0.5446398 , 0.52992 , 0.5150389 , 0.5000008 ,                 // 51 à  60
-		0.4848104 , 0.4694724 , 0.4539914 , 0.438372 , 0.4226191 , 0.4067376 , 0.3907321 , 0.3746075 , 0.3583689 , 0.3420211 ,               // 61 à  70
-		0.3255692 , 0.309018 , 0.2923728 , 0.2756384 , 0.2588201 , 0.241923 , 0.2249522 , 0.2079128 , 0.1908101 , 0.1736494 ,                // 71 à  80
-		0.1564357 , 0.1391743 , 0.1218706 , 0.1045297 , 0.08715699 , 0.06975782 , 0.05233728 , 0.0349008 , 0.01745369 , 0.0138 ,             // 81 à  90
-		-0.01745104 , -0.03489815 , -0.05233451 , -0.06975505 , -0.08715434 , -0.1045271 , -0.1218679 , -0.1391717 , -0.156433 , -0.1736467 ,// 91 à  100
-		-0.1908075 , -0.2079102 , -0.2249495 , -0.2419204 , -0.2588175 , -0.2756359 , -0.2923701 , -0.3090155 , -0.3255666 , -0.3420185 ,    // 101 à  110
-		-0.3583664 , -0.3746051 , -0.3907295 , -0.4067351 , -0.4226166 , -0.4383696 , -0.4539889 , -0.4694699 , -0.4848081 , -0.4999984 ,    // 111 à  120
-		-0.5150366 , -0.5299177 , -0.5446375 , -0.5591914 , -0.5735749 , -0.5877837 , -0.6018136 , -0.6156599 , -0.6293188 , -0.6427862 ,    // 121 à  130
-		-0.6560575 , -0.669129 , -0.6819969 , -0.6946569 , -0.7071053 , -0.7193384 , -0.7313522 , -0.7431435 , -0.7547083 , -0.7660431 ,     // 131 à  140
-		-0.7771447 , -0.7880094 , -0.7986342 , -0.8090158 , -0.8191508 , -0.8290363 , -0.8386694 , -0.8480469 , -0.8571661 , -0.8660243 ,    // 141 à  150
-		-0.8746186 , -0.8829465 , -0.8910055 , -0.898793 , -0.9063068 , -0.9135445 , -0.9205039 , -0.927183 , -0.9335796 , -0.9396918 ,      // 151 à  160
-		-0.9455178 , -0.9510558 , -0.956304 , -0.9612611 , -0.9659252 , -0.9702951 , -0.9743695 , -0.978147 , -0.9816267 , -0.9848073 ,      // 161 à  170
-		-0.9876879 , -0.9902677 , -0.9925459 , -0.9945216 , -0.9961945 , -0.9975639 , -0.9986294 , -0.9993907 , -0.9998476 , -0.99999 ,      // 171 à  180
-		-0.9998477 , -0.9993909 , -0.9986297 , -0.9975642 , -0.9961949 , -0.9945222 , -0.9925465 , -0.9902685 , -0.9876888 , -0.9848083 ,    // 181 à  190
-		-0.9816277 , -0.9781482 , -0.9743707 , -0.9702965 , -0.9659266 , -0.9612625 , -0.9563056 , -0.9510574 , -0.9455196 , -0.9396937 ,    // 191 à  200
-		-0.9335815 , -0.927185 , -0.9205061 , -0.9135467 , -0.9063091 , -0.8987955 , -0.8910079 , -0.8829491 , -0.8746213 , -0.866027 ,      // 201 à  210
-		-0.857169 , -0.8480497 , -0.8386723 , -0.8290394 , -0.8191538 , -0.8090189 , -0.7986375 , -0.7880127 , -0.7771481 , -0.7660466 ,     // 211 à  220
-		-0.7547117 , -0.743147 , -0.731356 , -0.7193421 , -0.7071092 , -0.6946609 , -0.6820008 , -0.6691331 , -0.6560616 , -0.6427905 ,      // 221 à  230
-		-0.6293229 , -0.6156641 , -0.6018178 , -0.5877882 , -0.5735794 , -0.5591961 , -0.5446419 , -0.5299222 , -0.5150412 , -0.5000032 ,    // 231 à  240
-		-0.4848129 , -0.4694746 , -0.4539936 , -0.4383744 , -0.4226216 , -0.4067401 , -0.3907347 , -0.3746099 , -0.3583714 , -0.3420237 ,    // 241 à  250
-		-0.3255718 , -0.3090207 , -0.2923756 , -0.2756409 , -0.2588227 , -0.2419256 , -0.2249549 , -0.2079156 , -0.1908126 , -0.1736519 ,    // 251 à  260
-		-0.1564383 , -0.139177 , -0.1218734 , -0.1045326 , -0.08715951 , -0.06976035 , -0.05233994 , -0.03490358 , -0.01745659 , -0.0427 ,   // 261 à  270
-		0.01744851 , 0.0348955 , 0.05233186 , 0.06975229 , 0.08715146 , 0.1045246 , 0.1218654 , 0.139169 , 0.1564303 , 0.1736439 ,           // 271 à  280
-		0.1908047 , 0.2079078 , 0.224947 , 0.2419178 , 0.2588149 , 0.2756331 , 0.2923674 , 0.309013 , 0.3255641 , 0.3420161 ,                // 281 à  290
-		0.3583638 , 0.3746024 , 0.3907273 , 0.4067327 , 0.4226143 , 0.4383671 , 0.4539864 , 0.4694674 , 0.4848059 , 0.4999962 ,              // 291 à  300
-		0.5150342 , 0.5299154 , 0.5446351 , 0.559189 , 0.5735728 , 0.5877816 , 0.6018113 , 0.6156578 , 0.6293167 , 0.6427839 ,               // 301 à  310
-		0.6560556 , 0.6691272 , 0.6819949 , 0.6946549 , 0.7071033 , 0.7193366 , 0.7313506 , 0.7431416 , 0.7547064 , 0.7660413 ,              // 311 à  320
-		0.7771428 , 0.7880079 , 0.7986327 , 0.8090141 , 0.8191492 , 0.8290347 , 0.8386678 , 0.8480456 , 0.8571648 , 0.8660229 ,              // 321 à  330
-		0.8746172 , 0.8829452 , 0.8910043 , 0.8987919 , 0.9063057 , 0.9135434 , 0.9205029 , 0.9271819 , 0.9335786 , 0.9396909 ,              // 331 à  340
-		0.9455169 , 0.9510549 , 0.9563032 , 0.9612602 , 0.9659245 , 0.9702945 , 0.9743689 , 0.9781465 , 0.9816261 , 0.9848069 ,              // 341 à  350
-		0.9876875 , 0.9902673 , 0.9925455 , 0.9945213 , 0.9961942 , 0.9975637 , 0.9986292 , 0.9993906 , 0.9998476 };                         // 351 à  359
-
-
 // Full buffer including back/front porch 
 static vga_pixel * gfxbuffer __attribute__((aligned(32)));
 static uint32_t dstbuffer __attribute__((aligned(32)));
@@ -157,6 +73,7 @@ static int  left_border;
 static int  right_border;
 static int  line_double;
 static int  pix_shift;
+static int  combine_shiftreg;
 
 #ifdef DEBUG
 static uint32_t   ISRTicks_prev = 0;
@@ -169,6 +86,8 @@ DMAChannel VGA_T4::flexio1DMA;
 DMAChannel VGA_T4::flexio2DMA; 
 static volatile uint32_t VSYNC = 0;
 #define NOP asm volatile("nop\n\t");
+
+PolyDef	PolySet;  // will contain a polygon data
 
 
 FASTRUN void VGA_T4::QT3_isr(void) {
@@ -192,19 +111,6 @@ FASTRUN void VGA_T4::QT3_isr(void) {
   uint32_t y = (currentLine - TOP_BORDER) >> line_double;
   // Visible area  
   if (y >= 0 && y < fb_height) {                          
-    /*
-    flexio1DMA.disable();
-    flexio2DMA.disable();
-    flexio1DMA.sourceBuffer((uint32_t *)&gfxbuffer[fb_stride*y], fb_stride); 
-    flexio1DMA.destination(FLEXIO1_SHIFTBUFNBS0);
-    flexio1DMA.disableOnCompletion();
-    flexio2DMA.sourceBuffer((uint32_t *)&gfxbuffer[fb_stride*y], fb_stride); 
-    flexio2DMA.destination(FLEXIO2_SHIFTBUF0);
-    flexio2DMA.disableOnCompletion();
-    flexio2DMA.enable();
-    flexio1DMA.enable();
-    */
-
     // Disable DMAs
     DMA_CERQ = flexio2DMA.channel;
     DMA_CERQ = flexio1DMA.channel; 
@@ -230,57 +136,9 @@ FASTRUN void VGA_T4::QT3_isr(void) {
       flexio1DMA.TCD->SADDR = p;
     }
 
-
-#ifdef COMBINED_SHIFTREGISTERS
-  unsigned int minorLoopBytes, minorLoopIterations, majorLoopBytes, majorLoopIterations;
-  int destinationAddressOffset, destinationAddressLastOffset, sourceAddressOffset, sourceAddressLastOffset, minorLoopOffset;
-  volatile uint32_t *destinationAddress, *sourceAddress;
-
-    DMA_CR |= DMA_CR_EMLM; // Enable minor loop mapping so that we can have a minor loop offset
-    minorLoopIterations = 4; // transfer 4 words with each DMA trigger into 4 FlexIO buffers
-    minorLoopBytes = minorLoopIterations * sizeof(uint32_t);
-  #define BYTES_PER_PIXEL 1
-    majorLoopBytes = maxpixperline * BYTES_PER_PIXEL; // This must be evenly divisible by 16
-    majorLoopIterations = majorLoopBytes / minorLoopBytes;
-
-    sourceAddressOffset = sizeof(uint32_t);
-    sourceAddressLastOffset = - majorLoopBytes; // at completion of major loop, reset source address
-    destinationAddress = &FLEXIO2_SHIFTBUF0;
-    destinationAddressOffset = sizeof(uint32_t);
-    minorLoopOffset = -minorLoopIterations * destinationAddressOffset; // reset destination address at end of each minor loop...
-    destinationAddressLastOffset = minorLoopOffset; // ...and at end of major loop
-    
-    flexio2DMA.TCD->SOFF = sourceAddressOffset;
-    flexio2DMA.TCD->SLAST = sourceAddressLastOffset;
-    flexio2DMA.TCD->ATTR_SRC = DMA_TCD_ATTR_SIZE_32BIT;
-    flexio2DMA.TCD->DADDR = destinationAddress;
-    flexio2DMA.TCD->DOFF = destinationAddressOffset;
-    flexio2DMA.TCD->ATTR_DST = DMA_TCD_ATTR_SIZE_32BIT;
-    flexio2DMA.TCD->DLASTSGA = destinationAddressLastOffset;
-    flexio2DMA.TCD->NBYTES_MLOFFYES = DMA_TCD_NBYTES_DMLOE | DMA_TCD_NBYTES_MLOFFYES_MLOFF(minorLoopOffset) | DMA_TCD_NBYTES_MLOFFYES_NBYTES(minorLoopBytes);
-    flexio2DMA.TCD->BITER = majorLoopIterations;
-    flexio2DMA.TCD->CITER = majorLoopIterations;
-    flexio2DMA.disableOnCompletion(); // disable on completion or else it will be triggered by FlexIO continuously
-
-    destinationAddress = &FLEXIO1_SHIFTBUFNBS0;
-    flexio1DMA.TCD->SOFF = sourceAddressOffset;
-    flexio1DMA.TCD->SLAST = sourceAddressLastOffset;
-    flexio1DMA.TCD->ATTR_SRC = DMA_TCD_ATTR_SIZE_32BIT;
-    flexio1DMA.TCD->DADDR = destinationAddress;
-    flexio1DMA.TCD->DOFF = destinationAddressOffset;
-    flexio1DMA.TCD->ATTR_DST = DMA_TCD_ATTR_SIZE_32BIT;
-    flexio1DMA.TCD->DLASTSGA = destinationAddressLastOffset;
-    flexio1DMA.TCD->NBYTES_MLOFFYES = DMA_TCD_NBYTES_DMLOE | DMA_TCD_NBYTES_MLOFFYES_MLOFF(minorLoopOffset) | DMA_TCD_NBYTES_MLOFFYES_NBYTES(minorLoopBytes);
-    flexio1DMA.TCD->BITER = majorLoopIterations;
-    flexio1DMA.TCD->CITER = majorLoopIterations;
-    flexio1DMA.disableOnCompletion(); // disable on completion or else it will be triggered by FlexIO continuously
-#endif
-
-
     // Enable DMAs
     DMA_SERQ = flexio2DMA.channel; 
-    if (fb_width <= 544)
-      DMA_SERQ = flexio1DMA.channel; 
+    DMA_SERQ = flexio1DMA.channel; 
     arm_dcache_flush((void*)((uint32_t *)&gfxbuffer[fb_stride*y]), fb_stride);
   }
   sei();  
@@ -358,7 +216,7 @@ if (!force && (CCM_ANALOG_PLL_VIDEO & CCM_ANALOG_PLL_VIDEO_ENABLE)) return;
 vga_error_t VGA_T4::begin(vga_mode_t mode)
 {
   uint32_t flexio_clock_div;
-
+  combine_shiftreg = 0;
 #ifdef USE_VIDEO_PLL
   int div_select = 49;
   int num = 135;
@@ -407,6 +265,7 @@ vga_error_t VGA_T4::begin(vga_mode_t mode)
       flexio_clock_div = flexio_freq/pix_freq;
       line_double = 1;
       pix_shift = 0; //1+DMA_HACK;
+      combine_shiftreg = 1;
       break;
     case VGA_MODE_640x480:
       left_border = backporch_pix;
@@ -418,6 +277,7 @@ vga_error_t VGA_T4::begin(vga_mode_t mode)
       flexio_clock_div = (flexio_freq/pix_freq); 
       line_double = 0;
       pix_shift = 0; //1+DMA_HACK;
+      combine_shiftreg = 1;
       break;   
 
     case VGA_MODE_544x240:
@@ -722,23 +582,13 @@ vga_error_t VGA_T4::begin(vga_mode_t mode)
   FLEXIO1_SHIFTCFG0 = parallelWidth | inputSource | stopBit | startBit;
   FLEXIO1_SHIFTCTL0 = timerSelect | timerPolarity | pinConfig | pinSelect | pinPolarity | shifterMode;
   
-#ifdef COMBINED_SHIFTREGISTERS
-  pinConfig = FLEXIO_SHIFTCTL_PINCFG(0);      // Shifter pin output disabled
-  FLEXIO2_SHIFTCFG1 = parallelWidth | inputSource | stopBit | startBit;
-  FLEXIO2_SHIFTCTL1 = timerSelect | timerPolarity | pinConfig | shifterMode;
-  FLEXIO2_SHIFTCFG2 = parallelWidth | inputSource | stopBit | startBit;
-  FLEXIO2_SHIFTCTL2 = timerSelect | timerPolarity | pinConfig | shifterMode;
-  FLEXIO2_SHIFTCFG3 = parallelWidth | inputSource | stopBit | startBit;
-  FLEXIO2_SHIFTCTL3 = timerSelect | timerPolarity | pinConfig | shifterMode;
-
-  FLEXIO1_SHIFTCFG1 = parallelWidth | inputSource | stopBit | startBit;
-  FLEXIO1_SHIFTCTL1 = timerSelect | timerPolarity | pinConfig | shifterMode;
-  FLEXIO1_SHIFTCFG2 = parallelWidth | inputSource | stopBit | startBit;
-  FLEXIO1_SHIFTCTL2 = timerSelect | timerPolarity | pinConfig | shifterMode;
-  FLEXIO1_SHIFTCFG3 = parallelWidth | inputSource | stopBit | startBit;
-  FLEXIO1_SHIFTCTL3 = timerSelect | timerPolarity | pinConfig | shifterMode;
-#endif  
-
+  if (combine_shiftreg) {
+    pinConfig = FLEXIO_SHIFTCTL_PINCFG(0);    // Shifter pin output disabled
+    FLEXIO2_SHIFTCFG1 = parallelWidth | inputSource | stopBit | startBit;
+    FLEXIO2_SHIFTCTL1 = timerSelect | timerPolarity | pinConfig | shifterMode;
+    FLEXIO1_SHIFTCFG1 = parallelWidth | inputSource | stopBit | startBit;
+    FLEXIO1_SHIFTCTL1 = timerSelect | timerPolarity | pinConfig | shifterMode;
+  }
   /* Timer 0 registers for FlexIO2 */ 
   timerOutput = FLEXIO_TIMCFG_TIMOUT(1);      // Timer output is logic zero when enabled and is not affected by the Timer reset
   timerDecrement = FLEXIO_TIMCFG_TIMDEC(0);   // Timer decrements on FlexIO clock, shift clock equals timer output
@@ -747,11 +597,12 @@ vga_error_t VGA_T4::begin(vga_mode_t mode)
   timerEnable = FLEXIO_TIMCFG_TIMENA(2);      // Timer enabled on Trigger assert
   stopBit = FLEXIO_TIMCFG_TSTOP(0);           // Stop bit disabled
   startBit = FLEXIO_TIMCFG_TSTART*(0);        // Start bit disabled
-#ifdef COMBINED_SHIFTREGISTERS
-  triggerSelect = FLEXIO_TIMCTL_TRGSEL(1+4*(3)); // Trigger select Shifter 3 status flag
-#else
-  triggerSelect = FLEXIO_TIMCTL_TRGSEL(1+4*(0)); // Trigger select Shifter 0 status flag
-#endif  
+  if (combine_shiftreg) {
+    triggerSelect = FLEXIO_TIMCTL_TRGSEL(1+4*(1)); // Trigger select Shifter 1 status flag
+  }
+  else {
+    triggerSelect = FLEXIO_TIMCTL_TRGSEL(1+4*(0)); // Trigger select Shifter 0 status flag
+  }    
   triggerPolarity = FLEXIO_TIMCTL_TRGPOL*(1); // Trigger active low
   triggerSource = FLEXIO_TIMCTL_TRGSRC*(1);   // Internal trigger selected
   pinConfig = FLEXIO_TIMCTL_PINCFG(0);        // Timer pin output disabled
@@ -759,33 +610,38 @@ vga_error_t VGA_T4::begin(vga_mode_t mode)
   //pinPolarity = FLEXIO_TIMCTL_PINPOL*(0);     // Timer pin polarity active high
   timerMode = FLEXIO_TIMCTL_TIMOD(1);         // Dual 8-bit counters baud mode
   // flexio_clock_div : Output clock frequency is N times slower than FlexIO clock (41.7 ns period) (23.980MHz?)
+
+  int shifts_per_transfer;
 #ifdef BITS12
-  #define SHIFTS_PER_TRANSFER 8
+  shifts_per_transfer = 8;
 #else
-#ifdef COMBINED_SHIFTREGISTERS
-  #define SHIFTS_PER_TRANSFER 16 // Shift out 8 times with every transfer = two 32-bit words = contents of Shifter 0&1 
-#endif  
-  #define SHIFTS_PER_TRANSFER 4 // Shift out 4 times with every transfer = 32-bit word = contents of Shifter 0 
+  if (combine_shiftreg) {
+    shifts_per_transfer = 8; // Shift out 8 times with every transfer = 64-bit word = contents of Shifter 0+1
+  }
+  else {
+    shifts_per_transfer = 4; // Shift out 4 times with every transfer = 32-bit word = contents of Shifter 0 
+  }
 #endif
   FLEXIO2_TIMCFG0 = timerOutput | timerDecrement | timerReset | timerDisable | timerEnable | stopBit | startBit;
   FLEXIO2_TIMCTL0 = triggerSelect | triggerPolarity | triggerSource | pinConfig /*| pinSelect | pinPolarity*/ | timerMode;
-  FLEXIO2_TIMCMP0 = ((SHIFTS_PER_TRANSFER*2-1)<<8) | ((flexio_clock_div/2-1)<<0);
+  FLEXIO2_TIMCMP0 = ((shifts_per_transfer*2-1)<<8) | ((flexio_clock_div/2-1)<<0);
   /* Timer 0 registers for FlexIO1 */
   FLEXIO1_TIMCFG0 = timerOutput | timerDecrement | timerReset | timerDisable | timerEnable | stopBit | startBit;
   FLEXIO1_TIMCTL0 = triggerSelect | triggerPolarity | triggerSource | pinConfig /*| pinSelect | pinPolarity*/ | timerMode;
-  FLEXIO1_TIMCMP0 = ((SHIFTS_PER_TRANSFER*2-1)<<8) | ((flexio_clock_div/2-1)<<0);
+  FLEXIO1_TIMCMP0 = ((shifts_per_transfer*2-1)<<8) | ((flexio_clock_div/2-1)<<0);
 #ifdef DEBUG
   Serial.println("FlexIO setup complete");
 #endif
 
   /* Enable DMA trigger on Shifter0, DMA request is generated when data is transferred from buffer0 to shifter0 */ 
-#ifdef COMBINED_SHIFTREGISTERS 
-  FLEXIO2_SHIFTSDEN |= (1<<3); 
-  FLEXIO1_SHIFTSDEN |= (1<<3);
-#else 
-  FLEXIO2_SHIFTSDEN |= (1<<0); 
-  FLEXIO1_SHIFTSDEN |= (1<<0);
-#endif  
+  if (combine_shiftreg) {
+    FLEXIO2_SHIFTSDEN |= (1<<1); 
+    FLEXIO1_SHIFTSDEN |= (1<<1);
+  }
+  else {
+    FLEXIO2_SHIFTSDEN |= (1<<0); 
+    FLEXIO1_SHIFTSDEN |= (1<<0);
+  }
   /* Disable DMA channel so it doesn't start transferring yet */
   flexio1DMA.disable();
   flexio2DMA.disable();
@@ -794,66 +650,90 @@ vga_error_t VGA_T4::begin(vga_mode_t mode)
   flexio2DMA.triggerAtHardwareEvent(DMAMUX_SOURCE_FLEXIO2_REQUEST0);
 
 
-#ifdef COMBINED_SHIFTREGISTERS 
-#else 
-  // Setup DMA2 Flexio2 copy
-  flexio2DMA.TCD->NBYTES = 4;
-  flexio2DMA.TCD->SOFF = 4;
-  flexio2DMA.TCD->SLAST = -maxpixperline;
-  flexio2DMA.TCD->BITER = maxpixperline / 4;
-  flexio2DMA.TCD->CITER = maxpixperline / 4;
-  flexio2DMA.TCD->DADDR = &FLEXIO2_SHIFTBUF0;
-  flexio2DMA.TCD->DOFF = 0;
-  flexio2DMA.TCD->DLASTSGA = 0;
-  flexio2DMA.TCD->ATTR = DMA_TCD_ATTR_SSIZE(2) | DMA_TCD_ATTR_DSIZE(2); // 32bits
-  flexio2DMA.TCD->CSR |= DMA_TCD_CSR_DREQ;
-
-  // Setup DMA1 Flexio1 copy
-  // Use pixel shift to avoid color smearing?
-  if (pix_shift & DMA_HACK)
-  {
-    if (pix_shift & 0x3 == 0) {
-      // Aligned 32 bits copy (32bits to 32bits)
-      flexio1DMA.TCD->NBYTES = 4;
-      flexio1DMA.TCD->SOFF = 4;
-      flexio1DMA.TCD->SLAST = -maxpixperline;
-      flexio1DMA.TCD->BITER = maxpixperline / 4;
-      flexio1DMA.TCD->CITER = maxpixperline / 4;
-      flexio1DMA.TCD->DADDR = &FLEXIO1_SHIFTBUFNBS0;
-      flexio1DMA.TCD->DOFF = 0;
-      flexio1DMA.TCD->DLASTSGA = 0;
-      flexio1DMA.TCD->ATTR = DMA_TCD_ATTR_SSIZE(2) | DMA_TCD_ATTR_DSIZE(2); // 32bits to 32bits
-      flexio1DMA.TCD->CSR |= DMA_TCD_CSR_DREQ;
-    }
-    else {
-      // Unaligned (source) 32 bits copy (8bits to 32bits)
-      flexio1DMA.TCD->NBYTES = 4;
-      flexio1DMA.TCD->SOFF = 1;
-      flexio1DMA.TCD->SLAST = -maxpixperline;
-      flexio1DMA.TCD->BITER = maxpixperline / 4;
-      flexio1DMA.TCD->CITER = maxpixperline / 4;
-      flexio1DMA.TCD->DADDR = &FLEXIO1_SHIFTBUFNBS0;
-      flexio1DMA.TCD->DOFF = 0;
-      flexio1DMA.TCD->DLASTSGA = 0;
-      flexio1DMA.TCD->ATTR = DMA_TCD_ATTR_SSIZE(0) | DMA_TCD_ATTR_DSIZE(2); // 8bits to 32bits
-      flexio1DMA.TCD->CSR |= DMA_TCD_CSR_DREQ; // disable on completion
-    }	
+  if (combine_shiftreg) {
+    flexio2DMA.TCD->NBYTES = 8;
+    flexio2DMA.TCD->SOFF = 4;
+    flexio2DMA.TCD->SLAST = -maxpixperline;
+    flexio2DMA.TCD->BITER = maxpixperline / 8;
+    flexio2DMA.TCD->CITER = maxpixperline / 8;
+    flexio2DMA.TCD->DADDR = &FLEXIO2_SHIFTBUF0;
+    flexio2DMA.TCD->DOFF = 0;
+    flexio2DMA.TCD->DLASTSGA = 0;
+    flexio2DMA.TCD->ATTR = DMA_TCD_ATTR_SSIZE(2) | DMA_TCD_ATTR_DSIZE(3); // 32bits => 64bits
+    flexio2DMA.TCD->CSR |= DMA_TCD_CSR_DREQ;
+  
+    flexio1DMA.TCD->NBYTES = 8;
+    flexio1DMA.TCD->SOFF = 4;
+    flexio1DMA.TCD->SLAST = -maxpixperline;
+    flexio1DMA.TCD->BITER = maxpixperline / 8;
+    flexio1DMA.TCD->CITER = maxpixperline / 8;
+    flexio1DMA.TCD->DADDR = &FLEXIO1_SHIFTBUFNBS0;
+    flexio1DMA.TCD->DOFF = 0;
+    flexio1DMA.TCD->DLASTSGA = 0;
+    flexio1DMA.TCD->ATTR = DMA_TCD_ATTR_SSIZE(2) | DMA_TCD_ATTR_DSIZE(3); // 32bits => 64bits
+    flexio1DMA.TCD->CSR |= DMA_TCD_CSR_DREQ;     
   }
-  else 
-  {
-      // Aligned 32 bits copy
-      flexio1DMA.TCD->NBYTES = 4;
-      flexio1DMA.TCD->SOFF = 4;
-      flexio1DMA.TCD->SLAST = -maxpixperline;
-      flexio1DMA.TCD->BITER = maxpixperline / 4;
-      flexio1DMA.TCD->CITER = maxpixperline / 4;
-      flexio1DMA.TCD->DADDR = &FLEXIO1_SHIFTBUFNBS0;
-      flexio1DMA.TCD->DOFF = 0;
-      flexio1DMA.TCD->DLASTSGA = 0;
-      flexio1DMA.TCD->ATTR = DMA_TCD_ATTR_SSIZE(2) | DMA_TCD_ATTR_DSIZE(2); // 32bits
-      flexio1DMA.TCD->CSR |= DMA_TCD_CSR_DREQ;
-  } 
-#endif
+  else {
+    // Setup DMA2 Flexio2 copy
+    flexio2DMA.TCD->NBYTES = 4;
+    flexio2DMA.TCD->SOFF = 4;
+    flexio2DMA.TCD->SLAST = -maxpixperline;
+    flexio2DMA.TCD->BITER = maxpixperline / 4;
+    flexio2DMA.TCD->CITER = maxpixperline / 4;
+    flexio2DMA.TCD->DADDR = &FLEXIO2_SHIFTBUF0;
+    flexio2DMA.TCD->DOFF = 0;
+    flexio2DMA.TCD->DLASTSGA = 0;
+    flexio2DMA.TCD->ATTR = DMA_TCD_ATTR_SSIZE(2) | DMA_TCD_ATTR_DSIZE(2); // 32bits
+    flexio2DMA.TCD->CSR |= DMA_TCD_CSR_DREQ;
+
+    // Setup DMA1 Flexio1 copy
+    // Use pixel shift to avoid color smearing?
+    if (pix_shift & DMA_HACK)
+    {
+      if (pix_shift & 0x3 == 0) {
+        // Aligned 32 bits copy (32bits to 32bits)
+        flexio1DMA.TCD->NBYTES = 4;
+        flexio1DMA.TCD->SOFF = 4;
+        flexio1DMA.TCD->SLAST = -maxpixperline;
+        flexio1DMA.TCD->BITER = maxpixperline / 4;
+        flexio1DMA.TCD->CITER = maxpixperline / 4;
+        flexio1DMA.TCD->DADDR = &FLEXIO1_SHIFTBUFNBS0;
+        flexio1DMA.TCD->DOFF = 0;
+        flexio1DMA.TCD->DLASTSGA = 0;
+        flexio1DMA.TCD->ATTR = DMA_TCD_ATTR_SSIZE(2) | DMA_TCD_ATTR_DSIZE(2); // 32bits to 32bits
+        flexio1DMA.TCD->CSR |= DMA_TCD_CSR_DREQ;
+      }
+      else {
+        // Unaligned (source) 32 bits copy (8bits to 32bits)
+        flexio1DMA.TCD->NBYTES = 4;
+        flexio1DMA.TCD->SOFF = 1;
+        flexio1DMA.TCD->SLAST = -maxpixperline;
+        flexio1DMA.TCD->BITER = maxpixperline / 4;
+        flexio1DMA.TCD->CITER = maxpixperline / 4;
+        flexio1DMA.TCD->DADDR = &FLEXIO1_SHIFTBUFNBS0;
+        flexio1DMA.TCD->DOFF = 0;
+        flexio1DMA.TCD->DLASTSGA = 0;
+        flexio1DMA.TCD->ATTR = DMA_TCD_ATTR_SSIZE(0) | DMA_TCD_ATTR_DSIZE(2); // 8bits to 32bits
+        flexio1DMA.TCD->CSR |= DMA_TCD_CSR_DREQ; // disable on completion
+      }
+    }
+    else 
+    {
+        // Aligned 32 bits copy
+        flexio1DMA.TCD->NBYTES = 4;
+        flexio1DMA.TCD->SOFF = 4;
+        flexio1DMA.TCD->SLAST = -maxpixperline;
+        flexio1DMA.TCD->BITER = maxpixperline / 4;
+        flexio1DMA.TCD->CITER = maxpixperline / 4;
+        flexio1DMA.TCD->DADDR = &FLEXIO1_SHIFTBUFNBS0;
+        flexio1DMA.TCD->DOFF = 0;
+        flexio1DMA.TCD->DLASTSGA = 0;
+        flexio1DMA.TCD->ATTR = DMA_TCD_ATTR_SSIZE(2) | DMA_TCD_ATTR_DSIZE(2); // 32bits
+        flexio1DMA.TCD->CSR |= DMA_TCD_CSR_DREQ;
+    }    
+  }
+
+
 
 
 #ifdef DEBUG
@@ -962,7 +842,8 @@ void VGA_T4::clear(vga_pixel color) {
 
 
 void VGA_T4::drawPixel(int x, int y, vga_pixel color){
-  framebuffer[y*fb_stride+x] = color;
+	if((x>=0) && (x<=fb_width) && (y>=0) && (y<=fb_height))
+		framebuffer[y*fb_stride+x] = color;
 }
 
 vga_pixel VGA_T4::getPixel(int x, int y){
@@ -1354,14 +1235,34 @@ void VGA_T4::drawline(int16_t x1, int16_t y1, int16_t x2, int16_t y2, vga_pixel 
     }
   }
 }
-  
+
+//--------------------------------------------------------------
+// Draw a horizontal line
+// x1,y1   : starting point
+// lenght  : lenght in pixels
+// color   : 16bits color
+//--------------------------------------------------------------
+void VGA_T4::draw_h_line(int16_t x, int16_t y, int16_t lenght, vga_pixel color){
+	drawline(x , y , x + lenght , y , color);
+}
+
+//--------------------------------------------------------------
+// Draw a vertical line
+// x1,y1   : starting point
+// lenght  : lenght in pixels
+// color   : 16bits color
+//--------------------------------------------------------------
+void VGA_T4::draw_v_line(int16_t x, int16_t y, int16_t lenght, vga_pixel color){
+	drawline(x , y , x , y + lenght , color);
+}
+
 //--------------------------------------------------------------
 // Draw a circle.
 // x, y - center of circle.
 // r - radius.
 // color - color of the circle.
 //--------------------------------------------------------------
-void VGA_T4::drawcircle(int16_t x, int16_t y, uint16_t radius, vga_pixel color){
+void VGA_T4::drawcircle(int16_t x, int16_t y, int16_t radius, vga_pixel color){
   int16_t a, b, P;
 
   a = 0;
@@ -1369,21 +1270,13 @@ void VGA_T4::drawcircle(int16_t x, int16_t y, uint16_t radius, vga_pixel color){
   P = 1 - radius;
 
   do {
-    if(((a+x) >= 0) && ((b+x) >= 0))
       drawPixel(a+x, b+y, color);
-    if(((b+x) >= 0) && ((a+y) >= 0))
       drawPixel(b+x, a+y, color);
-    if(((x-a) >= 0) && ((b+y) >= 0))
       drawPixel(x-a, b+y, color);
-    if(((x-b) >= 0) && ((a+y) >= 0))
       drawPixel(x-b, a+y, color);
-    if(((b+x) >= 0) && ((y-a) >= 0))
       drawPixel(b+x, y-a, color);
-    if(((a+x) >= 0) && ((y-b) >= 0))
       drawPixel(a+x, y-b, color);
-    if(((x-a) >= 0) && ((y-b) >= 0))
       drawPixel(x-a, y-b, color);
-    if(((x-b) >= 0) && ((y-a) >= 0))
       drawPixel(x-b, y-a, color);
 
     if(P < 0)
@@ -1415,14 +1308,14 @@ void VGA_T4::drawfilledcircle(int16_t x, int16_t y, int16_t radius, vga_pixel fi
   {
     if(CurY > 0)
     {
-      drawline(x - CurX, y - CurY , x - CurX, 2*CurY + y - CurY,fillcolor);
-      drawline(x + CurX, y - CurY , x + CurX, 2*CurY + y - CurY,fillcolor);
+      draw_v_line(x - CurX, y - CurY, 2*CurY, fillcolor);
+      draw_v_line(x + CurX, y - CurY, 2*CurY, fillcolor);
     }
 
     if(CurX > 0)
     {
-      drawline(x - CurY, y - CurX , x - CurY, 2*CurX + y - CurX,fillcolor);
-      drawline(x + CurY, y - CurX , x + CurY, 2*CurX + y - CurX,fillcolor);
+      draw_v_line(x - CurY, y - CurX, 2*CurX, fillcolor);
+      draw_v_line(x + CurY, y - CurX, 2*CurX, fillcolor);
     }
     if (D < 0)
     {
@@ -1447,12 +1340,12 @@ void VGA_T4::drawfilledcircle(int16_t x, int16_t y, int16_t radius, vga_pixel fi
 // radius2: major radius of ellipse.
 // color: specifies the Color to use for draw the Border from the Ellipse.
 //--------------------------------------------------------------
-void VGA_T4::drawellipse(int16_t cx, int16_t cy, uint16_t radius1, uint16_t radius2, vga_pixel color){
+void VGA_T4::drawellipse(int16_t cx, int16_t cy, int16_t radius1, int16_t radius2, vga_pixel color){
   int x = -radius1, y = 0, err = 2-2*radius1, e2;
   float K = 0, rad1 = 0, rad2 = 0;
 
   rad1 = radius1;
-  rad2 = radius1;
+  rad2 = radius2;
 
   if (radius1 > radius2)
   {
@@ -1501,7 +1394,7 @@ void VGA_T4::drawellipse(int16_t cx, int16_t cy, uint16_t radius1, uint16_t radi
 // radius2: major radius of ellipse.
 // fillcolor  : specifies the Color to use for Fill the Ellipse.
 // bordercolor: specifies the Color to use for draw the Border from the Ellipse.
-void VGA_T4::drawfilledellipse(int16_t cx, int16_t cy, uint16_t radius1, uint16_t radius2, vga_pixel fillcolor, vga_pixel bordercolor){
+void VGA_T4::drawfilledellipse(int16_t cx, int16_t cy, int16_t radius1, int16_t radius2, vga_pixel fillcolor, vga_pixel bordercolor){
   int x = -radius1, y = 0, err = 2-2*radius1, e2;
   float K = 0, rad1 = 0, rad2 = 0;
 
@@ -1513,8 +1406,8 @@ void VGA_T4::drawfilledellipse(int16_t cx, int16_t cy, uint16_t radius1, uint16_
     do
     {
       K = (float)(rad1/rad2);
-      drawline((cx+x), (cy-(uint16_t)(y/K)), (cx+x), (cy-(uint16_t)(y/K)) + (2*(uint16_t)(y/K) + 1) , fillcolor);
-      drawline((cx-x), (cy-(uint16_t)(y/K)), (cx-x), (cy-(uint16_t)(y/K)) + (2*(uint16_t)(y/K) + 1) , fillcolor);
+      draw_v_line((cx+x), (cy-(uint16_t)(y/K)), (2*(uint16_t)(y/K) + 1) , fillcolor);
+      draw_v_line((cx-x), (cy-(uint16_t)(y/K)), (2*(uint16_t)(y/K) + 1) , fillcolor);
 
       e2 = err;
       if (e2 <= y)
@@ -1534,8 +1427,8 @@ void VGA_T4::drawfilledellipse(int16_t cx, int16_t cy, uint16_t radius1, uint16_
     do
     {
       K = (float)(rad2/rad1);
-      drawline((cx-(uint16_t)(x/K)), (cy+y), (cx-(uint16_t)(x/K)) + (2*(uint16_t)(x/K) + 1), (cy+y) , fillcolor);
-      drawline((cx-(uint16_t)(x/K)), (cy-y), (cx-(uint16_t)(x/K)) + (2*(uint16_t)(x/K) + 1), (cy-y) , fillcolor);
+      draw_h_line((cx-(uint16_t)(x/K)), (cy+y), (2*(uint16_t)(x/K) + 1) , fillcolor);
+      draw_h_line((cx-(uint16_t)(x/K)), (cy-y), (2*(uint16_t)(x/K) + 1) , fillcolor);
 
       e2 = err;
       if (e2 <= x)
@@ -1734,5 +1627,162 @@ void VGA_T4::drawfilledquad(int16_t centerx, int16_t centery, int16_t w, int16_t
 	drawline(px[1],py[1],px[2],py[2],bordercolor);
 	drawline(px[2],py[2],px[3],py[3],bordercolor);
 	drawline(px[3],py[3],px[0],py[0],bordercolor);
+}
+
+//--------------------------------------------------------------
+//  Displays a Polygon.
+//  centerx			: are specified with PolySet.Center.x and y.
+//	centery
+//  cx              : Translate the polygon in x direction
+//  cy              : Translate the polygon in y direction
+//  bordercolor  	: specifies the Color to use for draw the Border from the polygon.
+//  polygon points  : are specified with PolySet.Pts[n].x and y 
+//  After the last polygon point , set PolySet.Pts[n + 1].x to 10000
+//  Max number of point for the polygon is set by MaxPolyPoint previously defined.
+//--------------------------------------------------------------
+void VGA_T4::drawpolygon(int16_t cx, int16_t cy, vga_pixel bordercolor){
+	uint8_t n = 1;
+	while((PolySet.Pts[n].x < 10000) && (n < MaxPolyPoint)){
+		drawline(PolySet.Pts[n].x + cx, 
+	             PolySet.Pts[n].y + cy, 
+				 PolySet.Pts[n - 1].x + cx , 
+				 PolySet.Pts[n - 1].y + cy, 
+				 bordercolor);
+		n++;		
+	}
+	// close the polygon
+	drawline(PolySet.Pts[0].x + cx, 
+	         PolySet.Pts[0].y + cy, 
+			 PolySet.Pts[n - 1].x + cx, 
+			 PolySet.Pts[n - 1].y + cy, 
+			 bordercolor);
+}
+
+//--------------------------------------------------------------
+//  Displays a filled Polygon.
+//  centerx			: are specified with PolySet.Center.x and y.
+//	centery
+//  cx              : Translate the polygon in x direction
+//  cy              : Translate the polygon in y direction
+//  fillcolor  	    : specifies the Color to use for filling the polygon.
+//  bordercolor  	: specifies the Color to use for draw the Border from the polygon.
+//  polygon points  : are specified with PolySet.Pts[n].x and y 
+//  After the last polygon point , set PolySet.Pts[n + 1].x to 10000
+//  Max number of point for the polygon is set by MaxPolyPoint previously defined.
+//--------------------------------------------------------------
+void VGA_T4::drawfullpolygon(int16_t cx, int16_t cy, vga_pixel fillcolor, vga_pixel bordercolor){
+	int n,i,j,k,dy,dx;
+	int y,temp;
+	int a[MaxPolyPoint][2],xi[MaxPolyPoint];
+	float slope[MaxPolyPoint];
+
+    n = 0;
+
+	while((PolySet.Pts[n].x < 10000) && (n < MaxPolyPoint)){
+		a[n][0] = PolySet.Pts[n].x;
+		a[n][1] = PolySet.Pts[n].y;
+		n++;
+	}
+
+	a[n][0]=PolySet.Pts[0].x;
+	a[n][1]=PolySet.Pts[0].y;
+
+	for(i=0;i<n;i++)
+	{
+		dy=a[i+1][1]-a[i][1];
+		dx=a[i+1][0]-a[i][0];
+
+		if(dy==0) slope[i]=1.0;
+		if(dx==0) slope[i]=0.0;
+
+		if((dy!=0)&&(dx!=0)) /*- calculate inverse slope -*/
+		{
+			slope[i]=(float) dx/dy;
+		}
+	}
+
+	for(y=0;y< 480;y++)
+	{
+		k=0;
+		for(i=0;i<n;i++)
+		{
+
+			if( ((a[i][1]<=y)&&(a[i+1][1]>y))||
+					((a[i][1]>y)&&(a[i+1][1]<=y)))
+			{
+				xi[k]=(int)(a[i][0]+slope[i]*(y-a[i][1]));
+				k++;
+			}
+		}
+
+		for(j=0;j<k-1;j++) /*- Arrange x-intersections in order -*/
+			for(i=0;i<k-1;i++)
+			{
+				if(xi[i]>xi[i+1])
+				{
+					temp=xi[i];
+					xi[i]=xi[i+1];
+					xi[i+1]=temp;
+				}
+			}
+
+		for(i=0;i<k;i+=2)
+		{
+			drawline(xi[i] + cx,y + cy,xi[i+1]+1 + cx,y + cy, fillcolor);
+		}
+
+	}
+
+	// Draw the polygon outline
+	drawpolygon(cx , cy , bordercolor);
+}
+
+//--------------------------------------------------------------
+//  Displays a rotated Polygon.
+//  centerx			: are specified with PolySet.Center.x and y.
+//	centery
+//  cx              : Translate the polygon in x direction
+//  ct              : Translate the polygon in y direction
+//  bordercolor  	: specifies the Color to use for draw the Border from the polygon.
+//  polygon points  : are specified with PolySet.Pts[n].x and y 
+//  After the last polygon point , set PolySet.Pts[n + 1].x to 10000
+//  Max number of point for the polygon is set by MaxPolyPoint previously defined.
+//--------------------------------------------------------------
+void VGA_T4::drawrotatepolygon(int16_t cx, int16_t cy, int16_t Angle, vga_pixel fillcolor, vga_pixel bordercolor, uint8_t filled)
+{
+	Point2D 	SavePts[MaxPolyPoint];
+	uint16_t	n = 0;
+	int16_t		ctx,cty;
+	float		raddeg = 3.14159 / 180;
+	float		angletmp;
+	float		tosquare;
+	float		ptsdist;
+
+	ctx = PolySet.Center.x;
+	cty = PolySet.Center.y;
+	
+	while((PolySet.Pts[n].x < 10000) && (n < MaxPolyPoint)){
+		// Save Original points coordinates
+		SavePts[n] = PolySet.Pts[n];
+		// Rotate and save all points
+		tosquare = ((PolySet.Pts[n].x - ctx) * (PolySet.Pts[n].x - ctx)) + ((PolySet.Pts[n].y - cty) * (PolySet.Pts[n].y - cty));
+		ptsdist  = sqrtf(tosquare);
+		angletmp = atan2f(PolySet.Pts[n].y - cty,PolySet.Pts[n].x - ctx) / raddeg;
+		PolySet.Pts[n].x = (int16_t)((cosf((angletmp + Angle) * raddeg) * ptsdist) + ctx);
+		PolySet.Pts[n].y = (int16_t)((sinf((angletmp + Angle) * raddeg) * ptsdist) + cty);
+		n++;
+	}	
+	
+	if(filled != 0)
+	  drawfullpolygon(cx , cy , fillcolor , bordercolor);
+    else
+	  drawpolygon(cx , cy , bordercolor);
+
+	// Get the original points back;
+	n=0;
+	while((PolySet.Pts[n].x < 10000) && (n < MaxPolyPoint)){
+		PolySet.Pts[n] = SavePts[n];
+		n++;
+	}	
 }
 
