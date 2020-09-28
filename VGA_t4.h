@@ -195,12 +195,13 @@ public:
   vga_pixel * getLineBuffer(int j);
   void drawRect(int16_t x, int16_t y, int16_t w, int16_t h, vga_pixel color);
   void drawText(int16_t x, int16_t y, const char * text, vga_pixel fgcolor, vga_pixel bgcolor, bool doublesize);
-  void drawSprite(int16_t x, int16_t y, const vga_pixel *bitmap);
-  void drawSprite(int16_t x, int16_t y, const vga_pixel *bitmap, uint16_t croparx, uint16_t cropary, uint16_t croparw, uint16_t croparh);
+  void drawSprite(int16_t x, int16_t y, const int16_t *bitmap);
+  void drawSprite(int16_t x, int16_t y, const int16_t *bitmap, uint16_t croparx, uint16_t cropary, uint16_t croparw, uint16_t croparh);
   void writeScreen(const vga_pixel *pcolors);  
   void writeLine(int width, int height, int y, vga_pixel *buf);
-  void writeLine(int width, int height, int stride, uint8_t *buffer, vga_pixel *palette16);
-  void writeScreen(int width, int height, int stride, uint8_t *buffer, vga_pixel *palette16);
+  void writeLine(int width, int height, int stride, uint8_t *buffer, vga_pixel *palette);
+  void writeLine16(int width, int height, int y, uint16_t *buf);  
+  void writeScreen(int width, int height, int stride, uint8_t *buffer, vga_pixel *palette);
 
   // ************************************** GFX API extension from darthvader ******************************************************
   void drawline(int16_t x1, int16_t y1, int16_t x2, int16_t y2, vga_pixel color);

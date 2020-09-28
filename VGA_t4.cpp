@@ -59,6 +59,10 @@
 
 #define DMA_HACK      0x80
 
+#define R16(rgb) ((rgb>>8)&0xf8) 
+#define G16(rgb) ((rgb>>3)&0xfc) 
+#define B16(rgb) ((rgb<<3)&0xf8) 
+
 // Full buffer including back/front porch 
 static vga_pixel * gfxbuffer __attribute__((aligned(32)));
 static uint32_t dstbuffer __attribute__((aligned(32)));
@@ -110,11 +114,10 @@ FASTRUN void VGA_T4::QT3_isr(void) {
 
   uint32_t y = (currentLine - TOP_BORDER) >> line_double;
   // Visible area  
-  if (y >= 0 && y < fb_height) {                          
+  if (y >= 0 && y < fb_height) {  
     // Disable DMAs
     DMA_CERQ = flexio2DMA.channel;
     DMA_CERQ = flexio1DMA.channel; 
-
 
     // Setup source adress
     // Aligned 32 bits copy
@@ -219,7 +222,9 @@ vga_error_t VGA_T4::begin(vga_mode_t mode)
   combine_shiftreg = 0;
 #ifdef USE_VIDEO_PLL
   int div_select = 49;
-  int num = 135;
+  int num = 135;  
+  //int div_select = 48;
+  //int num = 30;
   int denom = 100;  
   int flexio_clk_sel = FLEXIO_CLK_SEL_PLL5;   
   int flexio_freq = ( 24000*div_select + (num*24000)/denom )/POST_DIV_SELECT;
@@ -236,7 +241,7 @@ vga_error_t VGA_T4::begin(vga_mode_t mode)
       left_border = backporch_pix/2;
       right_border = frontporch_pix/2;
       fb_width = 320;
-      fb_height = 480 ;
+      fb_height = 240 ;
       fb_stride = left_border+fb_width+right_border;
       maxpixperline = fb_stride;
       flexio_clock_div = flexio_freq/(pix_freq/2);
@@ -259,7 +264,7 @@ vga_error_t VGA_T4::begin(vga_mode_t mode)
       left_border = backporch_pix;
       right_border = frontporch_pix;
       fb_width = 640;
-      fb_height = 480 ;
+      fb_height = 240 ;
       fb_stride = left_border+fb_width+right_border;
       maxpixperline = fb_stride;
       flexio_clock_div = flexio_freq/pix_freq;
@@ -284,7 +289,7 @@ vga_error_t VGA_T4::begin(vga_mode_t mode)
       left_border = backporch_pix;
       right_border = frontporch_pix;
       fb_width = 544;
-      fb_height = 480 ;
+      fb_height = 240 ;
       fb_stride = left_border+fb_width+right_border;
       maxpixperline = fb_stride;
       flexio_clock_div = flexio_freq/(pix_freq/1.2)+2;
@@ -307,7 +312,7 @@ vga_error_t VGA_T4::begin(vga_mode_t mode)
       left_border = backporch_pix/1.3;
       right_border = frontporch_pix/1.3;
       fb_width = 512;
-      fb_height = 480 ;
+      fb_height = 240 ;
       fb_stride = left_border+fb_width+right_border;
       maxpixperline = fb_stride;
       flexio_clock_div = flexio_freq/(pix_freq/1.3); 
@@ -330,7 +335,7 @@ vga_error_t VGA_T4::begin(vga_mode_t mode)
       left_border = backporch_pix/1.75;
       right_border = frontporch_pix/1.75;
       fb_width = 352;
-      fb_height = 480 ;
+      fb_height = 240 ;
       fb_stride = left_border+fb_width+right_border;
       maxpixperline = fb_stride;
       flexio_clock_div = flexio_freq/(pix_freq/1.75); 
@@ -751,7 +756,7 @@ vga_error_t VGA_T4::begin(vga_mode_t mode)
   CCM_CCGR6 |= 0xC0000000;              //enable clocks to CG15 of CGR6 for QT3
   //configure QTIMER3 Timer3 for test of alternating Compare1 and Compare2
   
-  #define MARGIN_N 1005 //8
+  #define MARGIN_N 1005
   #define MARGIN_D 1000
 
   TMR3_CTRL3 = 0b0000000000100000;      //stop all functions of timer 
@@ -904,7 +909,7 @@ void VGA_T4::drawText(int16_t x, int16_t y, const char * text, vga_pixel fgcolor
         bits = bits >> 1;     
         if (bits&0x01) *dst++=fgcolor;
         else *dst++=bgcolor;
-        l++;       
+        l++;
       }
       dst=&framebuffer[l*fb_stride+x]; 
       bits = *charpt++;     
@@ -937,15 +942,15 @@ void VGA_T4::drawText(int16_t x, int16_t y, const char * text, vga_pixel fgcolor
   } 
 }
 
-void VGA_T4::drawSprite(int16_t x, int16_t y, const vga_pixel *bitmap) {
+void VGA_T4::drawSprite(int16_t x, int16_t y, const int16_t *bitmap) {
     drawSprite(x,y,bitmap, 0,0,0,0);
 }
 
-void VGA_T4::drawSprite(int16_t x, int16_t y, const vga_pixel *bitmap, uint16_t arx, uint16_t ary, uint16_t arw, uint16_t arh)
+void VGA_T4::drawSprite(int16_t x, int16_t y, const int16_t *bitmap, uint16_t arx, uint16_t ary, uint16_t arw, uint16_t arh)
 {
   int bmp_offx = 0;
   int bmp_offy = 0;
-  vga_pixel *bmp_ptr;
+  int16_t *bmp_ptr;
     
   int w =*bitmap++;
   int h = *bitmap++;
@@ -990,17 +995,18 @@ void VGA_T4::drawSprite(int16_t x, int16_t y, const vga_pixel *bitmap, uint16_t 
   for (int row=0;row<arh; row++)
   {
     vga_pixel * dst=&framebuffer[l*fb_stride+arx];  
-    bmp_ptr = (vga_pixel*)bitmap;
+    bmp_ptr = bitmap;
     for (int col=0;col<arw; col++)
     {
-        *dst++ = *bmp_ptr++;            
+        uint16_t pix= *bmp_ptr++;
+        *dst++ = VGA_RGB(R16(pix),G16(pix),B16(pix));
     } 
     bitmap +=  w;
     l++;
   } 
 }
 
-void VGA_T4::writeLine(int width, int height, int y, uint8_t *buf, vga_pixel *palette16) {
+void VGA_T4::writeLine(int width, int height, int y, uint8_t *buf, vga_pixel *palette) {
   vga_pixel * dst=&framebuffer[y*fb_stride];
   if (width > fb_width) {
 #ifdef TFT_LINEARINT    
@@ -1008,11 +1014,11 @@ void VGA_T4::writeLine(int width, int height, int y, uint8_t *buf, vga_pixel *pa
     int pos = delta;
     for (int i=0; i<fb_width; i++)
     {
-      uint16_t val = palette16[*buf++];
-      pos--;      
+      uint16_t val = palette[*buf++];
+      pos--;
       if (pos == 0) {
-#ifdef LINEARINT_HACK        
-        val  = ((uint32_t)palette16[*buf++] + val)/2;
+#ifdef LINEARINT_HACK
+        val  = ((uint32_t)palette[*buf++] + val)/2;
 #else
         uint16_t val2 = *buf++;
         val = RGBVAL16((R16(val)+R16(val2))/2,(G16(val)+G16(val2))/2,(B16(val)+B16(val2))/2);
@@ -1026,17 +1032,17 @@ void VGA_T4::writeLine(int width, int height, int y, uint8_t *buf, vga_pixel *pa
     int pos = 0;
     for (int i=0; i<fb_width; i++)
     {
-      *dst++=palette16[buf[pos >> 8]];
+      *dst++=palette[buf[pos >> 8]];
       pos +=step;
     }  
-#endif       
+#endif
   }
   else if ((width*2) == fb_width) {
     for (int i=0; i<width; i++)
     {
-      *dst++=palette16[*buf];
-      *dst++=palette16[*buf++];
-    }       
+      *dst++=palette[*buf];
+      *dst++=palette[*buf++];
+    } 
   }
   else {
     if (width <= fb_width) {
@@ -1044,52 +1050,20 @@ void VGA_T4::writeLine(int width, int height, int y, uint8_t *buf, vga_pixel *pa
     }
     for (int i=0; i<width; i++)
     {
-      *dst++=palette16[*buf++];
-    }       
+      *dst++=palette[*buf++];
+    } 
   }
 }
 
 void VGA_T4::writeLine(int width, int height, int y, vga_pixel *buf) {
   uint8_t * dst=&framebuffer[y*fb_stride];    
   if (width > fb_width) {
-
     int step = ((width << 8)/fb_width);
     int pos = 0;
-    vga_pixel plo=0;
-    uint16_t pr,pg,pb;
-    int ppos=0;
     for (int i=0; i<fb_width; i++)
     {
-      uint16_t r,g,b;
-      vga_pixel lo,hi;
-      b = buf[ppos];
-      r = b & 0xe0;
-      g = b & 0x1c;
-      b = b & 0x03;
+      *dst++ = buf[pos >> 8];
       pos +=step;
-      if ( ((pos >> 8)-ppos) == 1 ) {
-        lo = (r+pr)/2 | (g+pg)/2 | (b+pb)/2;
-      }
-      else {
-        lo = r | g | b;
-      }
-      hi = lo & 0xf0;
-      lo &= 0xf;
-      *dst++ = plo| hi;
-      plo=lo;
-      pr = r;
-      pg = g;
-      pb = b;
-      ppos = pos >> 8;
-      /*
-      vga_pixel lo,hi;
-      lo = buf[pos >> 8];
-      hi = lo & 0xf0;
-      lo &= 0xf;
-      *dst++ = plo| hi;
-      plo=lo;
-      pos +=step;
-       */
     }        
   }
   else if ((width*2) == fb_width) {
@@ -1113,20 +1087,54 @@ void VGA_T4::writeLine(int width, int height, int y, vga_pixel *buf) {
       vga_pixel plo=0,pplo=0;
       for (int i=0; i<width; i++)
       {
-        //*dst++=*buf++;
-        vga_pixel lo,hi;
-        lo = *buf++;
-        hi = lo & 0xf0;
-        lo &= 0xf;
-        *dst++ = plo| hi;
-        //pplo=plo;
-        plo=lo;
+        *dst++=*buf++;
       }
     }
   }
 }
 
-void VGA_T4::writeScreen(int width, int height, int stride, uint8_t *buf, vga_pixel *palette16) {
+void VGA_T4::writeLine16(int width, int height, int y, uint16_t *buf) {
+  uint8_t * dst=&framebuffer[y*fb_stride];    
+  if (width > fb_width) {
+    int step = ((width << 8)/fb_width);
+    int pos = 0;
+    for (int i=0; i<fb_width; i++)
+    {
+      uint16_t pix = buf[pos >> 8];
+      *dst++ = VGA_RGB(R16(pix),G16(pix),B16(pix)); 
+      pos +=step;
+    }        
+  }
+  else if ((width*2) == fb_width) {
+    for (int i=0; i<width; i++)
+    {
+      uint16_t pix = *buf++;
+      *dst++=VGA_RGB(R16(pix),G16(pix),B16(pix));
+      *dst++=VGA_RGB(R16(pix),G16(pix),B16(pix));
+    }       
+  }
+  else {
+    if (width <= fb_width) {
+      dst += (fb_width-width)/2;
+    }
+    if (pix_shift&DMA_HACK) {
+      for (int i=0; i<width; i++)
+      {
+        uint16_t pix = *buf++;
+        *dst++=VGA_RGB(R16(pix),G16(pix),B16(pix));
+      }      
+    }
+    else {
+      for (int i=0; i<width; i++)
+      {
+        uint16_t pix = *buf++;
+        *dst++=VGA_RGB(R16(pix),G16(pix),B16(pix));
+      }
+    }
+  }
+}
+
+void VGA_T4::writeScreen(int width, int height, int stride, uint8_t *buf, vga_pixel *palette) {
   uint8_t *buffer=buf;
   uint8_t *src; 
 
@@ -1134,51 +1142,51 @@ void VGA_T4::writeScreen(int width, int height, int stride, uint8_t *buf, vga_pi
   if (width*2 <= fb_width) {
     for (j=0; j<height; j++)
     {
-      vga_pixel * dst=&framebuffer[y*fb_stride];        
+      vga_pixel * dst=&framebuffer[y*fb_stride];
       src=buffer;
       for (i=0; i<width; i++)
       {
-        vga_pixel val = palette16[*src++];
+        vga_pixel val = palette[*src++];
         *dst++ = val;
         *dst++ = val;
       }
       y++;
       if (height*2 <= fb_height) {
-        dst=&framebuffer[y*fb_stride];           
+        dst=&framebuffer[y*fb_stride];    
         src=buffer;
         for (i=0; i<width; i++)
         {
-          vga_pixel val = palette16[*src++];
+          vga_pixel val = palette[*src++];
           *dst++ = val;
           *dst++ = val;
         }
-        y++;      
+        y++;
       } 
-      buffer += stride;      
+      buffer += stride;
     }
   }
   else if (width <= fb_width) {
     //dst += (fb_width-width)/2;
     for (j=0; j<height; j++)
     {
-      vga_pixel * dst=&framebuffer[y*fb_stride+(fb_width-width)/2];          
+      vga_pixel * dst=&framebuffer[y*fb_stride+(fb_width-width)/2];  
       src=buffer;
       for (i=0; i<width; i++)
       {
-        vga_pixel val = palette16[*src++];
+        vga_pixel val = palette[*src++];
         *dst++ = val;
       }
       y++;
       if (height*2 <= fb_height) {
-        dst=&framebuffer[y*fb_stride+(fb_width-width)/2];          
+        dst=&framebuffer[y*fb_stride+(fb_width-width)/2];   
         src=buffer;
         for (i=0; i<width; i++)
         {
-          vga_pixel val = palette16[*src++];
+          vga_pixel val = palette[*src++];
           *dst++ = val;
         }
         y++;
-      }      
+      }
       buffer += stride;  
     }
   }   
