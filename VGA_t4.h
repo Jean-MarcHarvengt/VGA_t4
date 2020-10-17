@@ -63,6 +63,8 @@ typedef enum vga_error_t
 
 #define MaxPolyPoint    100
 
+#define AUDIO_SAMPLE_BUFFER_SIZE 256
+
 // 2D point structure
 typedef struct {
 	int16_t x;			// X Coordinate on screen
@@ -175,7 +177,9 @@ public:
 
   // display VGA image
   vga_error_t begin(vga_mode_t mode);
+  void begin_audio(int samplesize, void (*callback)(short * stream, int len));
   void end();
+  void end_audio();
   void debug();
   
   // retrieve real size of the frame buffer
@@ -225,8 +229,9 @@ private:
   static uint32_t currentLine;
   static DMAChannel flexio1DMA;
   static DMAChannel flexio2DMA; 
-
   static void QT3_isr(void);
+  static void AUDIO_isr(void);  
+  static void SOFTWARE_isr(void);  
 };
 
 
