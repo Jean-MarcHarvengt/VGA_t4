@@ -49,9 +49,7 @@ typedef enum vga_mode_t
   VGA_MODE_512x240 = 4,
   VGA_MODE_512x480 = 5,
   VGA_MODE_640x240 = 6,
-  VGA_MODE_640x480 = 7,
-  VGA_MODE_544x240 = 8,
-  VGA_MODE_544x480 = 9
+  VGA_MODE_640x480 = 7
 } vga_mode_t;
 
 
@@ -187,6 +185,7 @@ public:
 
   // wait next Vsync
   void waitSync();
+  void waitLine(int line);
 
 
   // =========================================================
@@ -206,6 +205,7 @@ public:
   void writeLine(int width, int height, int stride, uint8_t *buffer, vga_pixel *palette);
   void writeLine16(int width, int height, int y, uint16_t *buf);  
   void writeScreen(int width, int height, int stride, uint8_t *buffer, vga_pixel *palette);
+  void copyLine(int width, int height, int ysrc, int ydst);
 
   // ************************************** GFX API extension from darthvader ******************************************************
   void drawline(int16_t x1, int16_t y1, int16_t x2, int16_t y2, vga_pixel color);
@@ -226,7 +226,6 @@ public:
 
 private:
   static uint8_t _vsync_pin;
-  static uint32_t currentLine;
   static DMAChannel flexio1DMA;
   static DMAChannel flexio2DMA; 
   static void QT3_isr(void);

@@ -25,17 +25,17 @@
 // RGB out, combined to create 8bits(/12bits) output.
 
 // Note:
-// - supported resolutions of 352x240,352x480,512x240 and 512x480 pixels
+// - supported resolutions: 320x240,320x480,640x240 and 640x480 pixels
+// - experimental resolution: 352x240,352x480
+// - experimental resolution: 512x240,512x480 (not stable)
 // - video memory is allocated using malloc in T4 heap
 // - as the 2 DMA transfers are not started exactly at same time, there is a bit of color smearing 
 //   but tried to be compensated by pixel shifting 
 // - Default is 8bits RRRGGGBB (332) 
 //   But 12bits GBB0RRRRGGGBB (444) feasible BUT NOT TESTED !!!!
 // - Only ok at 600MHz else some disturbances visible
-// - I did not tested on an HDMI display with VGA adapter
 
 
-//#define USE_VIDEO_PLL 1
 
 #define TOP_BORDER    40
 #define PIN_HBLANK    15
@@ -85,10 +85,10 @@ volatile uint32_t ISRTicks = 0;
 #endif 
 
 uint8_t    VGA_T4::_vsync_pin = -1;
-uint32_t   VGA_T4::currentLine=0;
 DMAChannel VGA_T4::flexio1DMA;
 DMAChannel VGA_T4::flexio2DMA; 
 static volatile uint32_t VSYNC = 0;
+static volatile uint32_t currentLine=0;
 #define NOP asm volatile("nop\n\t");
 
 
@@ -124,12 +124,7 @@ FASTRUN void VGA_T4::QT3_isr(void) {
 
     // Setup source adress
     // Aligned 32 bits copy
-#ifdef USE_VIDEO_PLL 
-    // DMA delay is different in this case...
-    unsigned long * p=(uint32_t *)&gfxbuffer[fb_stride*y+4];
-#else
-    unsigned long * p=(uint32_t *)&gfxbuffer[fb_stride*y];
-#endif    
+    unsigned long * p=(uint32_t *)&gfxbuffer[fb_stride*y];  
     flexio2DMA.TCD->SADDR = p;
     if (pix_shift & DMA_HACK) 
     {
@@ -145,7 +140,7 @@ FASTRUN void VGA_T4::QT3_isr(void) {
     // Enable DMAs
     DMA_SERQ = flexio2DMA.channel; 
     DMA_SERQ = flexio1DMA.channel; 
-    arm_dcache_flush((void*)((uint32_t *)&gfxbuffer[fb_stride*y]), fb_stride);
+    arm_dcache_flush_delete((void*)((uint32_t *)&gfxbuffer[fb_stride*y]), fb_stride);
   }
   sei();  
 
@@ -179,7 +174,7 @@ VGA_T4::VGA_T4(int vsync_pin = DEFAULT_VSYNC_PIN)
 // pix_period = 39.7ns
 // H-PULSE is 3.8133us = 3813.3ns => 96 pixels (see above for the rest)
 #define frontporch_pix  16
-#define backporch_pix   48 //16
+#define backporch_pix   48
 
 // Flexio Clock
 // PLL3 SW CLOCK    (3) => 480 MHz
@@ -199,6 +194,7 @@ VGA_T4::VGA_T4(int vsync_pin = DEFAULT_VSYNC_PIN)
 // Valid range for DIV_SELECT divider value: 27~54.
 
 #define POST_DIV_SELECT 2
+
 static void set_videoClock(int nfact, int32_t nmult, uint32_t ndiv, bool force) // sets PLL5
 {
 if (!force && (CCM_ANALOG_PLL_VIDEO & CCM_ANALOG_PLL_VIDEO_ENABLE)) return;
@@ -223,23 +219,17 @@ vga_error_t VGA_T4::begin(vga_mode_t mode)
 {
   uint32_t flexio_clock_div;
   combine_shiftreg = 0;
-#ifdef USE_VIDEO_PLL
-  int div_select = 49;
-  int num = 135;  
-  //int div_select = 48;
-  //int num = 30;
+//  int div_select = 49;
+//  int num = 135;  
+//  int denom = 100;  
+  int div_select = 20;
+  int num = 98;
   int denom = 100;  
   int flexio_clk_sel = FLEXIO_CLK_SEL_PLL5;   
   int flexio_freq = ( 24000*div_select + (num*24000)/denom )/POST_DIV_SELECT;
   set_videoClock(div_select,num,denom,true);     
-#else
-  // Default PLL3
-  int flexio_clk_sel = FLEXIO_CLK_SEL_PLL3;
-  int flexio_freq = 480000;
-#endif  
+ 
   switch(mode) {
-
-#ifdef USE_VIDEO_PLL
     case VGA_MODE_320x240:
       left_border = backporch_pix/2;
       right_border = frontporch_pix/2;
@@ -262,7 +252,6 @@ vga_error_t VGA_T4::begin(vga_mode_t mode)
       line_double = 0;
       pix_shift = 2+DMA_HACK;
       break;   
-
     case VGA_MODE_640x240:
       left_border = backporch_pix;
       right_border = frontporch_pix;
@@ -272,7 +261,7 @@ vga_error_t VGA_T4::begin(vga_mode_t mode)
       maxpixperline = fb_stride;
       flexio_clock_div = flexio_freq/pix_freq;
       line_double = 1;
-      pix_shift = 0; //1+DMA_HACK;
+      pix_shift = 4; //1+DMA_HACK;
       combine_shiftreg = 1;
       break;
     case VGA_MODE_640x480:
@@ -284,33 +273,9 @@ vga_error_t VGA_T4::begin(vga_mode_t mode)
       maxpixperline = fb_stride;
       flexio_clock_div = (flexio_freq/pix_freq); 
       line_double = 0;
-      pix_shift = 0; //1+DMA_HACK;
+      pix_shift = 4; //1+DMA_HACK;
       combine_shiftreg = 1;
       break;   
-
-    case VGA_MODE_544x240:
-      left_border = backporch_pix;
-      right_border = frontporch_pix;
-      fb_width = 544;
-      fb_height = 240 ;
-      fb_stride = left_border+fb_width+right_border;
-      maxpixperline = fb_stride;
-      flexio_clock_div = flexio_freq/(pix_freq/1.2)+2;
-      line_double = 1;
-      pix_shift = 0;//+DMA_HACK;
-      break;
-    case VGA_MODE_544x480:
-      left_border = backporch_pix;
-      right_border = frontporch_pix;
-      fb_width = 544;
-      fb_height = 480 ;
-      fb_stride = left_border+fb_width+right_border;
-      maxpixperline = fb_stride;
-      flexio_clock_div = flexio_freq/(pix_freq/1.2)+2;
-      line_double = 0;
-      pix_shift = 0;//+DMA_HACK;
-      break;   
-
     case VGA_MODE_512x240:
       left_border = backporch_pix/1.3;
       right_border = frontporch_pix/1.3;
@@ -318,7 +283,7 @@ vga_error_t VGA_T4::begin(vga_mode_t mode)
       fb_height = 240 ;
       fb_stride = left_border+fb_width+right_border;
       maxpixperline = fb_stride;
-      flexio_clock_div = flexio_freq/(pix_freq/1.3); 
+      flexio_clock_div = flexio_freq/(pix_freq/1.3)+2; 
       line_double = 1;
       pix_shift = 0;//+DMA_HACK;
       break;
@@ -329,11 +294,10 @@ vga_error_t VGA_T4::begin(vga_mode_t mode)
       fb_height = 480 ;
       fb_stride = left_border+fb_width+right_border;
       maxpixperline = fb_stride;
-      flexio_clock_div = flexio_freq/(pix_freq/1.3); 
+      flexio_clock_div = flexio_freq/(pix_freq/1.3)+2; 
       line_double = 0;
       pix_shift = 0;//+DMA_HACK;
       break; 
-
     case VGA_MODE_352x240:
       left_border = backporch_pix/1.75;
       right_border = frontporch_pix/1.75;
@@ -341,7 +305,7 @@ vga_error_t VGA_T4::begin(vga_mode_t mode)
       fb_height = 240 ;
       fb_stride = left_border+fb_width+right_border;
       maxpixperline = fb_stride;
-      flexio_clock_div = flexio_freq/(pix_freq/1.75); 
+      flexio_clock_div = flexio_freq/(pix_freq/1.75)+2; 
       line_double = 1;
       pix_shift = 2+DMA_HACK;
       break;
@@ -352,126 +316,10 @@ vga_error_t VGA_T4::begin(vga_mode_t mode)
       fb_height = 480 ;
       fb_stride = left_border+fb_width+right_border;
       maxpixperline = fb_stride;
-      flexio_clock_div = flexio_freq/(pix_freq/1.75); 
+      flexio_clock_div = flexio_freq/(pix_freq/1.75)+2; 
       line_double = 0;
       pix_shift = 2+DMA_HACK;
-      break;       
-#else
-    case VGA_MODE_320x240:
-      left_border = backporch_pix/2;
-      right_border = frontporch_pix/2;
-      fb_width = 320;
-      fb_height = 240 ;
-      fb_stride = left_border+fb_width+right_border;
-      maxpixperline = fb_stride;
-      flexio_clock_div = flexio_freq/(pix_freq/2);
-      line_double = 1;
-      pix_shift = 2+DMA_HACK;
-      break;
-    case VGA_MODE_320x480:
-      left_border = backporch_pix/2;
-      right_border = frontporch_pix/2;
-      fb_width = 320;
-      fb_height = 480 ;
-      fb_stride = left_border+fb_width+right_border;
-      maxpixperline = fb_stride;
-      flexio_clock_div = flexio_freq/(pix_freq/2);
-      line_double = 0;
-      pix_shift = 2+DMA_HACK;
-      break;
-
-    case VGA_MODE_640x240:
-      left_border = backporch_pix;
-      right_border = frontporch_pix;
-      fb_width = 640;
-      fb_height = 240 ;
-      fb_stride = left_border+fb_width+right_border;
-      maxpixperline = fb_stride;
-      flexio_clock_div = flexio_freq/pix_freq;
-      line_double = 1;
-      pix_shift = 2+DMA_HACK;
-      break;
-    case VGA_MODE_640x480:
-      left_border = backporch_pix;
-      right_border = frontporch_pix;
-      fb_width = 640;
-      fb_height = 480 ;
-      fb_stride = left_border+fb_width+right_border;
-      maxpixperline = fb_stride;
-      flexio_clock_div = flexio_freq/pix_freq;
-      line_double = 0;
-      pix_shift = 2+DMA_HACK;
-      break;     
-
-    case VGA_MODE_544x240:
-      left_border = backporch_pix;
-      right_border = frontporch_pix;
-      fb_width = 544;
-      fb_height = 240 ;
-      fb_stride = left_border+fb_width+right_border;
-      maxpixperline = fb_stride;
-      flexio_clock_div = flexio_freq/(pix_freq/1.1)+4; //1.2???
-      line_double = 1;
-      pix_shift = 0; //2+DMA_HACK;
-      break;
-    case VGA_MODE_544x480:
-      left_border = backporch_pix;
-      right_border = frontporch_pix;
-      fb_width = 544;
-      fb_height = 480 ;
-      fb_stride = left_border+fb_width+right_border;
-      maxpixperline = fb_stride;
-      flexio_clock_div = flexio_freq/(pix_freq/1.1)+4; //1.2???
-      line_double = 0;
-      pix_shift = 0; //2+DMA_HACK;
-      break;
-
-   case VGA_MODE_512x240:
-      left_border = backporch_pix/1.3;
-      right_border = frontporch_pix/1.3;
-      fb_width = 512;
-      fb_height = 240 ;
-      fb_stride = left_border+fb_width+right_border;
-      maxpixperline = fb_stride;
-      flexio_clock_div = flexio_freq/(pix_freq/1.3);
-      line_double = 1;
-      pix_shift = 0; //2+DMA_HACK;
-      break;
-    case VGA_MODE_512x480:
-      left_border = backporch_pix/1.3;
-      right_border = frontporch_pix/1.3;
-      fb_width = 512;
-      fb_height = 480 ;
-      fb_stride = left_border+fb_width+right_border;
-      maxpixperline = fb_stride;
-      flexio_clock_div = flexio_freq/(pix_freq/1.3);
-      line_double = 0;
-      pix_shift = 0; //2+DMA_HACK;
-      break;
-
-   case VGA_MODE_352x240:
-      left_border = backporch_pix/1.75;
-      right_border = frontporch_pix/1.75;
-      fb_width = 352;
-      fb_height = 480 ;
-      fb_stride = left_border+fb_width+right_border;
-      maxpixperline = fb_stride;
-      flexio_clock_div = flexio_freq/(pix_freq/1.75);
-      line_double = 1;
-      pix_shift = 2+DMA_HACK;
-      break;
-    case VGA_MODE_352x480:
-      left_border = backporch_pix/1.75;
-      right_border = frontporch_pix/1.75;
-      fb_width = 352;
-      fb_height = 480 ;
-      fb_stride = left_border+fb_width+right_border;
-      maxpixperline = fb_stride;
-      flexio_clock_div = flexio_freq/(pix_freq/1.75);
-      line_double = 0;
-      pix_shift = 2+DMA_HACK;
-      break;
-#endif   
+      break;         
   }	
 
   Serial.println("frequency");
@@ -741,9 +589,6 @@ vga_error_t VGA_T4::begin(vga_mode_t mode)
     }    
   }
 
-
-
-
 #ifdef DEBUG
   Serial.println("DMA setup complete");
 #endif
@@ -833,6 +678,11 @@ void VGA_T4::get_frame_buffer_size(int *width, int *height)
 void VGA_T4::waitSync()
 {
   while (VSYNC == 0) {};
+}
+
+void VGA_T4::waitLine(int line)
+{
+  while (currentLine != line) {};
 }
 
 
@@ -1080,19 +930,11 @@ void VGA_T4::writeLine(int width, int height, int y, vga_pixel *buf) {
     if (width <= fb_width) {
       dst += (fb_width-width)/2;
     }
-    if (pix_shift&DMA_HACK) {
-      for (int i=0; i<width; i++)
-      {
-        *dst++=*buf++;
-      }      
+    for (int i=0; i<width; i++)
+    {
+      *dst++=*buf++;
     }
-    else {
-      vga_pixel plo=0,pplo=0;
-      for (int i=0; i<width; i++)
-      {
-        *dst++=*buf++;
-      }
-    }
+
   }
 }
 
@@ -1112,8 +954,9 @@ void VGA_T4::writeLine16(int width, int height, int y, uint16_t *buf) {
     for (int i=0; i<width; i++)
     {
       uint16_t pix = *buf++;
-      *dst++=VGA_RGB(R16(pix),G16(pix),B16(pix));
-      *dst++=VGA_RGB(R16(pix),G16(pix),B16(pix));
+      uint8_t col = VGA_RGB(R16(pix),G16(pix),B16(pix));
+      *dst++= col;
+      *dst++= col;
     }       
   }
   else {
@@ -1195,6 +1038,11 @@ void VGA_T4::writeScreen(int width, int height, int stride, uint8_t *buf, vga_pi
   }   
 }
 
+void VGA_T4::copyLine(int width, int height, int ysrc, int ydst) {
+  uint8_t * src=&framebuffer[ysrc*fb_stride];    
+  uint8_t * dst=&framebuffer[ydst*fb_stride]; 
+  memcpy(dst,src,width);   
+} 
 
 
 //--------------------------------------------------------------
@@ -1932,6 +1780,7 @@ FASTRUN void VGA_T4::AUDIO_isr() {
 }
 
 FASTRUN void VGA_T4::SOFTWARE_isr() {
+  //Serial.println("x");
   if (fillfirsthalf) {
     fillsamples((short *)i2s_tx_buffer, sampleBufferSize);
     arm_dcache_flush_delete((void*)i2s_tx_buffer, (sampleBufferSize/2)*sizeof(uint32_t));
