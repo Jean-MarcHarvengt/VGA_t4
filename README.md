@@ -18,7 +18,7 @@ The implementation is quite different due to the different infrastructure of the
 - 2 FlexIO registers (1 and 2) and 2 DMA channels are used to generate RGB out, combining 2x4pins to create 8bits output.
 - the DMA transfers are initiated from the line interrupt to generate pixels so the front/back porch pixels are also part of each line buffer.
 
-It currently supports stabe 320x240, 320x480, 640x240, 640x480 (+ experimental 352x240, 352x480, 512x240 and 512x480 resolutions)<br>
+It currently supports stable 320x240, 320x480, 640x240, 640x480 (+ experimental 352x240, 352x480, 512x240 and 512x480 resolutions)<br>
 Please compile the sketches at 600MHz else some interferences will be visible.<br>
 Recent add-on: I2S interrupt based Audio driver for PCM5102 (minimized video distortion)<br>
 
