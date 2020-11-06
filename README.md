@@ -27,6 +27,7 @@ See code and examples for more details:
 - Vgatest make use of the very limited GFX api offered.
 - Vgatestalign highlights colors smearing issue.
 - Thanks to darthvader for the GFX routines integration and the testing!
+- more examples at https://github.com/Jean-MarcHarvengt/MCUME, Amiga and Atari ST emulation up to 640x480!!!!
 
 
 ---
