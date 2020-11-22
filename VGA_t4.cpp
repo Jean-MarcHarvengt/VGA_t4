@@ -77,6 +77,10 @@ static int  left_border;
 static int  right_border;
 static int  line_double;
 static int  pix_shift;
+static int  ref_div_select;
+static int  ref_freq_num;
+static int  ref_freq_denom;
+static int  ref_pix_shift;
 static int  combine_shiftreg;
 
 #ifdef DEBUG
@@ -133,7 +137,7 @@ FASTRUN void VGA_T4::QT3_isr(void) {
       flexio1DMA.TCD->SADDR = p2;
     }
     else  {
-      p=(uint32_t *)&gfxbuffer[fb_stride*y+(pix_shift&0xf)];
+      p=(uint32_t *)&gfxbuffer[fb_stride*y+(pix_shift&0xc)]; // multiple of 4
       flexio1DMA.TCD->SADDR = p;
     }
 
@@ -173,8 +177,8 @@ VGA_T4::VGA_T4(int vsync_pin = DEFAULT_VSYNC_PIN)
 
 // pix_period = 39.7ns
 // H-PULSE is 3.8133us = 3813.3ns => 96 pixels (see above for the rest)
-#define frontporch_pix  16
-#define backporch_pix   48
+#define frontporch_pix  20 //16
+#define backporch_pix   44 //48
 
 // Flexio Clock
 // PLL3 SW CLOCK    (3) => 480 MHz
@@ -197,7 +201,7 @@ VGA_T4::VGA_T4(int vsync_pin = DEFAULT_VSYNC_PIN)
 
 static void set_videoClock(int nfact, int32_t nmult, uint32_t ndiv, bool force) // sets PLL5
 {
-if (!force && (CCM_ANALOG_PLL_VIDEO & CCM_ANALOG_PLL_VIDEO_ENABLE)) return;
+//if (!force && (CCM_ANALOG_PLL_VIDEO & CCM_ANALOG_PLL_VIDEO_ENABLE)) return;
 
     CCM_ANALOG_PLL_VIDEO = CCM_ANALOG_PLL_VIDEO_BYPASS | CCM_ANALOG_PLL_VIDEO_ENABLE
  			             | CCM_ANALOG_PLL_VIDEO_POST_DIV_SELECT(1) // 2: 1/1; 1: 1/2; 0: 1/4
@@ -213,6 +217,15 @@ if (!force && (CCM_ANALOG_PLL_VIDEO & CCM_ANALOG_PLL_VIDEO_ENABLE)) return;
   	CCM_ANALOG_PLL_VIDEO &= ~CCM_ANALOG_PLL_VIDEO_BYPASS;//Disable Bypass
 }
 
+void VGA_T4::tweak_video(int shiftdelta, int numdelta, int denomdelta)
+{
+  if ( (numdelta != 0) || (denomdelta != 0) )   {
+    set_videoClock(ref_div_select,ref_freq_num+numdelta,ref_freq_denom+denomdelta,true);  
+  }  
+  if (shiftdelta != 0) {
+    pix_shift = ref_pix_shift + shiftdelta;
+  }
+}
 
 // display VGA image
 vga_error_t VGA_T4::begin(vga_mode_t mode)
@@ -223,12 +236,11 @@ vga_error_t VGA_T4::begin(vga_mode_t mode)
 //  int num = 135;  
 //  int denom = 100;  
   int div_select = 20;
-  int num = 98;
-  int denom = 100;  
+  int num = 9800;
+  int denom = 10000;  
   int flexio_clk_sel = FLEXIO_CLK_SEL_PLL5;   
   int flexio_freq = ( 24000*div_select + (num*24000)/denom )/POST_DIV_SELECT;
-  set_videoClock(div_select,num,denom,true);     
- 
+  set_videoClock(div_select,num,denom,true);
   switch(mode) {
     case VGA_MODE_320x240:
       left_border = backporch_pix/2;
@@ -261,7 +273,7 @@ vga_error_t VGA_T4::begin(vga_mode_t mode)
       maxpixperline = fb_stride;
       flexio_clock_div = flexio_freq/pix_freq;
       line_double = 1;
-      pix_shift = 4; //1+DMA_HACK;
+      pix_shift = 4;
       combine_shiftreg = 1;
       break;
     case VGA_MODE_640x480:
@@ -273,7 +285,7 @@ vga_error_t VGA_T4::begin(vga_mode_t mode)
       maxpixperline = fb_stride;
       flexio_clock_div = (flexio_freq/pix_freq); 
       line_double = 0;
-      pix_shift = 4; //1+DMA_HACK;
+      pix_shift = 4;
       combine_shiftreg = 1;
       break;   
     case VGA_MODE_512x240:
@@ -285,7 +297,7 @@ vga_error_t VGA_T4::begin(vga_mode_t mode)
       maxpixperline = fb_stride;
       flexio_clock_div = flexio_freq/(pix_freq/1.3)+2; 
       line_double = 1;
-      pix_shift = 0;//+DMA_HACK;
+      pix_shift = 0;
       break;
     case VGA_MODE_512x480:
       left_border = backporch_pix/1.3;
@@ -296,7 +308,7 @@ vga_error_t VGA_T4::begin(vga_mode_t mode)
       maxpixperline = fb_stride;
       flexio_clock_div = flexio_freq/(pix_freq/1.3)+2; 
       line_double = 0;
-      pix_shift = 0;//+DMA_HACK;
+      pix_shift = 0;
       break; 
     case VGA_MODE_352x240:
       left_border = backporch_pix/1.75;
@@ -321,6 +333,12 @@ vga_error_t VGA_T4::begin(vga_mode_t mode)
       pix_shift = 2+DMA_HACK;
       break;         
   }	
+
+  // Save param for tweek adjustment
+  ref_div_select = div_select;
+  ref_freq_num = num;
+  ref_freq_denom = denom;
+  ref_pix_shift = pix_shift;
 
   Serial.println("frequency");
   Serial.println(flexio_freq);
@@ -604,7 +622,7 @@ vga_error_t VGA_T4::begin(vga_mode_t mode)
   CCM_CCGR6 |= 0xC0000000;              //enable clocks to CG15 of CGR6 for QT3
   //configure QTIMER3 Timer3 for test of alternating Compare1 and Compare2
   
-  #define MARGIN_N 1005
+  #define MARGIN_N 1005 //1008 //1005
   #define MARGIN_D 1000
 
   TMR3_CTRL3 = 0b0000000000100000;      //stop all functions of timer 
@@ -860,6 +878,7 @@ void VGA_T4::drawSprite(int16_t x, int16_t y, const int16_t *bitmap, uint16_t ar
 }
 
 void VGA_T4::writeLine(int width, int height, int y, uint8_t *buf, vga_pixel *palette) {
+  if ( (height<fb_height) && (height > 2) ) y += (fb_height-height)/2;
   vga_pixel * dst=&framebuffer[y*fb_stride];
   if (width > fb_width) {
 #ifdef TFT_LINEARINT    
@@ -909,6 +928,7 @@ void VGA_T4::writeLine(int width, int height, int y, uint8_t *buf, vga_pixel *pa
 }
 
 void VGA_T4::writeLine(int width, int height, int y, vga_pixel *buf) {
+  if ( (height<fb_height) && (height > 2) ) y += (fb_height-height)/2;
   uint8_t * dst=&framebuffer[y*fb_stride];    
   if (width > fb_width) {
     int step = ((width << 8)/fb_width);
@@ -920,25 +940,44 @@ void VGA_T4::writeLine(int width, int height, int y, vga_pixel *buf) {
     }        
   }
   else if ((width*2) == fb_width) {
-    for (int i=0; i<width; i++)
-    {
-      *dst++=*buf;
-      *dst++=*buf++;
-    }       
+    if ( ( !(pix_shift & DMA_HACK) ) && (pix_shift & 0x3) ) {
+      vga_pixel *buf2 = buf + (pix_shift & 0x3);
+      for (int i=0; i<width; i++)
+      {
+        *dst++ = (*buf & 0xf0) | (*buf2 & 0x0f);
+        *dst++ = (*buf++ & 0xf0) | (*buf2++ & 0x0f);
+      }
+    }  
+    else {
+      for (int i=0; i<width; i++)
+      {
+        *dst++=*buf;
+        *dst++=*buf++;
+      }
+    }      
   }
   else {
     if (width <= fb_width) {
       dst += (fb_width-width)/2;
     }
-    for (int i=0; i<width; i++)
-    {
-      *dst++=*buf++;
+    if ( ( !(pix_shift & DMA_HACK) ) && (pix_shift & 0x3) ) {
+      vga_pixel *buf2 = buf + (pix_shift & 0x3);
+      for (int i=0; i<width; i++)
+      {
+        *dst++ = (*buf++ & 0xf0) | (*buf2++ & 0x0f);
+      }
+    }  
+    else {
+      for (int i=0; i<width; i++)
+      {
+        *dst++=*buf++;
+      }
     }
-
   }
 }
 
 void VGA_T4::writeLine16(int width, int height, int y, uint16_t *buf) {
+  if ( (height<fb_height) && (height > 2) ) y += (fb_height-height)/2;
   uint8_t * dst=&framebuffer[y*fb_stride];    
   if (width > fb_width) {
     int step = ((width << 8)/fb_width);
@@ -963,20 +1002,11 @@ void VGA_T4::writeLine16(int width, int height, int y, uint16_t *buf) {
     if (width <= fb_width) {
       dst += (fb_width-width)/2;
     }
-    if (pix_shift&DMA_HACK) {
-      for (int i=0; i<width; i++)
-      {
-        uint16_t pix = *buf++;
-        *dst++=VGA_RGB(R16(pix),G16(pix),B16(pix));
-      }      
-    }
-    else {
-      for (int i=0; i<width; i++)
-      {
-        uint16_t pix = *buf++;
-        *dst++=VGA_RGB(R16(pix),G16(pix),B16(pix));
-      }
-    }
+    for (int i=0; i<width; i++)
+    {
+      uint16_t pix = *buf++;
+      *dst++=VGA_RGB(R16(pix),G16(pix),B16(pix));
+    }      
   }
 }
 
@@ -1039,6 +1069,10 @@ void VGA_T4::writeScreen(int width, int height, int stride, uint8_t *buf, vga_pi
 }
 
 void VGA_T4::copyLine(int width, int height, int ysrc, int ydst) {
+  if ( (height<fb_height) && (height > 2) ) {
+    ysrc += (fb_height-height)/2;
+    ydst += (fb_height-height)/2;
+  }    
   uint8_t * src=&framebuffer[ysrc*fb_stride];    
   uint8_t * dst=&framebuffer[ydst*fb_stride]; 
   memcpy(dst,src,width);   

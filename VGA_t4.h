@@ -179,7 +179,9 @@ public:
   void end();
   void end_audio();
   void debug();
-  
+  void tweak_video(int shiftdelta, int numdelta, int denomdelta);
+
+
   // retrieve real size of the frame buffer
   void get_frame_buffer_size(int *width, int *height);
 
