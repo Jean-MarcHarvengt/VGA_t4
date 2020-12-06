@@ -166,7 +166,6 @@ const float calcco[360]={
 		0.9876875 , 0.9902673 , 0.9925455 , 0.9945213 , 0.9961942 , 0.9975637 , 0.9986292 , 0.9993906 , 0.9998476 };                         // 351 à  359
 
 
-
 class VGA_T4
 {
 public:
@@ -181,14 +180,12 @@ public:
   void debug();
   void tweak_video(int shiftdelta, int numdelta, int denomdelta);
 
-
   // retrieve real size of the frame buffer
   void get_frame_buffer_size(int *width, int *height);
 
   // wait next Vsync
   void waitSync();
   void waitLine(int line);
-
 
   // =========================================================
   // graphic primitives
@@ -225,6 +222,51 @@ public:
   void drawfullpolygon(int16_t cx, int16_t cy, vga_pixel fillcolor, vga_pixel bordercolor);
   void drawrotatepolygon(int16_t cx, int16_t cy, int16_t Angle, vga_pixel fillcolor, vga_pixel bordercolor, uint8_t filled);
   // *******************************************************************************************************************************
+
+
+  // =========================================================
+  // Game engine
+  // =========================================================
+
+  #define TILES_MAX_LAYERS  2
+
+  // 16x16 pixels tiles or 8x8 if USE_8PIXTILES is set
+  //#define USE_8PIXTILES 1
+  #ifdef USE_8PIXTILES
+  #define TILES_COLS        40
+  #define TILES_ROWS        30
+  #define TILES_W           8
+  #define TILES_H           8
+  #define TILES_HBITS       3
+  #define TILES_HMASK       0x7
+  #else
+  #define TILES_COLS        20
+  #define TILES_ROWS        15
+  #define TILES_W           16
+  #define TILES_H           16
+  #define TILES_HBITS       4
+  #define TILES_HMASK       0xf
+  #endif
+  
+  // 32 sprites 16x32 or max 64 16x16 (not larger!!!)
+  #define SPRITES_MAX       32
+  #define SPRITES_W         16
+  #define SPRITES_H         32
+
+  void begin_gfxengine(int nblayers, int nbtiles, int nbsprites);
+  void run_gfxengine();
+  void tile_data(unsigned char index, vga_pixel * data, int len);
+  void sprite_data(unsigned char index, vga_pixel * data, int len);
+  void sprite(int id , int x, int y, unsigned char index);
+  void sprite_hide(int id);
+  void tile_draw(int layer, int x, int y, unsigned char index);
+  void tile_draw_row(int layer, int x, int y, unsigned char * data, int len);
+  void tile_draw_col(int layer, int x, int y, unsigned char * data, int len);
+  void set_hscroll(int layer, int rowbeg, int rowend, int mask);
+  void set_vscroll(int layer, int colbeg, int colend, int mask);
+  void hscroll(int layer, int value);
+  void vscroll(int layer, int value);
+
 
 private:
   static uint8_t _vsync_pin;
