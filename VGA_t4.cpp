@@ -64,8 +64,8 @@
 #define B16(rgb) ((rgb<<3)&0xf8) 
 
 // Full buffer including back/front porch 
-static vga_pixel * gfxbuffer __attribute__((aligned(32))) = NULL;
-static uint32_t dstbuffer __attribute__((aligned(32)));
+static vga_pixel *gfxbuffer;
+static void *gfxbufferP;
 
 // Visible vuffer
 static vga_pixel * framebuffer;
@@ -93,7 +93,7 @@ DMAChannel VGA_T4::flexio1DMA;
 DMAChannel VGA_T4::flexio2DMA; 
 static volatile uint32_t VSYNC = 0;
 static volatile uint32_t currentLine=0;
-#define NOP asm volatile("nop\n\t");
+//#define NOP asm volatile("nop\n\t");
 
 
 
@@ -103,8 +103,6 @@ PolyDef	PolySet;  // will contain a polygon data
 FASTRUN void VGA_T4::QT3_isr(void) {
   TMR3_SCTRL3 &= ~(TMR_SCTRL_TCF);
   TMR3_CSCTRL3 &= ~(TMR_CSCTRL_TCF1|TMR_CSCTRL_TCF2);
-
-  cli();
   
   // V-PULSE
   if (currentLine > 0) {
@@ -119,7 +117,7 @@ FASTRUN void VGA_T4::QT3_isr(void) {
   currentLine = currentLine % 525;
 
 
-  uint32_t y = (currentLine - TOP_BORDER) >> line_double;
+  int y = (currentLine - TOP_BORDER) >> line_double;
   // Visible area  
   if (y >= 0 && y < fb_height) {  
     // Disable DMAs
@@ -144,18 +142,20 @@ FASTRUN void VGA_T4::QT3_isr(void) {
     // Enable DMAs
     DMA_SERQ = flexio2DMA.channel; 
     DMA_SERQ = flexio1DMA.channel; 
-    arm_dcache_flush_delete((void*)((uint32_t *)&gfxbuffer[fb_stride*y]), fb_stride);
+    //arm_dcache_flush_delete((void*)((uint32_t *)&gfxbuffer[fb_stride*y]), fb_stride);
+    arm_dcache_flush((void*)((uint32_t *)&gfxbuffer[fb_stride*y]), fb_stride);
+  }  else {
+    asm volatile("dsb");
   }
-  sei();  
 
 #ifdef DEBUG
   ISRTicks++; 
 #endif  
-  asm volatile("dsb");
+
 }
 
 
-VGA_T4::VGA_T4(int vsync_pin = DEFAULT_VSYNC_PIN)
+VGA_T4::VGA_T4(int vsync_pin)
 {
   _vsync_pin = vsync_pin;
 }
@@ -198,7 +198,7 @@ VGA_T4::VGA_T4(int vsync_pin = DEFAULT_VSYNC_PIN)
 // Valid range for DIV_SELECT divider value: 27~54.
 
 #define POST_DIV_SELECT 2
-
+FLASHMEM
 static void set_videoClock(int nfact, int32_t nmult, uint32_t ndiv, bool force) // sets PLL5
 {
 //if (!force && (CCM_ANALOG_PLL_VIDEO & CCM_ANALOG_PLL_VIDEO_ENABLE)) return;
@@ -228,6 +228,7 @@ void VGA_T4::tweak_video(int shiftdelta, int numdelta, int denomdelta)
 }
 
 // display VGA image
+FLASHMEM
 vga_error_t VGA_T4::begin(vga_mode_t mode)
 {
   uint32_t flexio_clock_div;
@@ -564,7 +565,7 @@ vga_error_t VGA_T4::begin(vga_mode_t mode)
     // Use pixel shift to avoid color smearing?
     if (pix_shift & DMA_HACK)
     {
-      if (pix_shift & 0x3 == 0) {
+      if ( (pix_shift & 0x3) == 0) {
         // Aligned 32 bits copy (32bits to 32bits)
         flexio1DMA.TCD->NBYTES = 4;
         flexio1DMA.TCD->SOFF = 4;
@@ -642,6 +643,7 @@ vga_error_t VGA_T4::begin(vga_mode_t mode)
   //configure Teensy pin Compare output
   IOMUXC_SW_MUX_CTL_PAD_GPIO_AD_B1_03 = 1;      // QT3 Timer3 is now on pin 15
   attachInterruptVector(IRQ_QTIMER3, QT3_isr);  //declare which routine performs the ISR function
+  NVIC_SET_PRIORITY(IRQ_QTIMER3, 0); 
   NVIC_ENABLE_IRQ(IRQ_QTIMER3);  
 #ifdef DEBUG
   Serial.println("QTIMER3 setup complete");
@@ -650,10 +652,13 @@ vga_error_t VGA_T4::begin(vga_mode_t mode)
 #endif
 
   /* initialize gfx buffer */
-  if (gfxbuffer == NULL) gfxbuffer = (vga_pixel*)malloc(fb_stride*fb_height*sizeof(vga_pixel)+4); // 4bytes for pixel shift 
-  if (gfxbuffer == NULL) return(VGA_ERROR);
-
-  memset((void*)&gfxbuffer[0],0, fb_stride*fb_height*sizeof(vga_pixel)+4);
+  #define ALIGNDMA 32
+  if (gfxbufferP == NULL) {
+	  gfxbufferP = malloc(fb_stride*fb_height*sizeof(vga_pixel)+4+(ALIGNDMA-1) ); // 4bytes for pixel shift 
+	  gfxbuffer = (vga_pixel*) ((void*)((intptr_t)gfxbufferP & ~ALIGNDMA)); //Align buffer;
+  }	  
+  if (gfxbuffer == NULL) return(VGA_ERROR);  
+  memset((void*)&gfxbuffer[0],0, fb_stride*fb_height*sizeof(vga_pixel)+4);  
   framebuffer = (vga_pixel*)&gfxbuffer[left_border];
 
   return(VGA_OK);
@@ -673,7 +678,7 @@ void VGA_T4::end()
   CCM_CCGR6 &= ~0xC0000000;
   sei(); 
   delay(50);
-  if (gfxbuffer != NULL) free(gfxbuffer); 
+  if (gfxbufferP != NULL) free(gfxbufferP); 
 }
 
 void VGA_T4::debug()
@@ -700,7 +705,7 @@ void VGA_T4::waitSync()
 
 void VGA_T4::waitLine(int line)
 {
-  while (currentLine != line) {};
+  while (currentLine != (unsigned)line) {};
 }
 
 void VGA_T4::clear(vga_pixel color) {
